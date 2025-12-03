@@ -1,0 +1,27 @@
+# IDEs config files
+.idea
+.vscode
+
+# OS generated files
+.DS_Store
+.DS_Store?
+ehthumbs.db
+Icon?
+Thumbs.db
+
+# Golang vendor folder
+vendor
+
+# Compiled binaries
+bin/*
+/publiccode-crawler
+
+# Env
+.env
+
+# Configurations
+config.toml
+
+# Downloaded files
+cache
+data
