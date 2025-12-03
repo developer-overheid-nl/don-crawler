@@ -10,7 +10,7 @@ RUN go mod download
 
 COPY . .
 ENV GIN_MODE=release
-RUN go build -o main ./cmd/main.go
+RUN go build -o main main.go
 
 EXPOSE 1337
 
