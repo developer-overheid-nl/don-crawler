@@ -12,7 +12,7 @@ import (
 )
 
 // CloneRepository clone the repository into DATADIR/repos/<hostname>/<vendor>/<repo>/gitClone.
-func CloneRepository(hostname, name, gitURL, index string) error {
+func CloneRepository(hostname, name, gitURL, _ string) error {
 	if name == "" {
 		return errors.New("cannot save a file without name")
 	}
@@ -38,5 +38,6 @@ func CloneRepository(hostname, name, gitURL, index string) error {
 	if err != nil {
 		return fmt.Errorf("cannot git clone the repository: %s: %w", out, err)
 	}
+
 	return err
 }

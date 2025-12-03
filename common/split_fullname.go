@@ -1,4 +1,7 @@
+//revive:disable:var-naming
 package common
+
+//revive:enable:var-naming
 
 import (
 	"strings"

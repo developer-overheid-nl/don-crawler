@@ -33,7 +33,7 @@ type GitOrganisation struct {
 }
 
 type Organisation struct {
-	Uri   string `json:"uri"`
+	URI   string `json:"uri"`
 	Label string `json:"label"`
 }
 
@@ -54,7 +54,7 @@ type repositoryRequest struct {
 	RepositoryURL    string  `json:"repositoryUrl"`
 	Name             *string `json:"name,omitempty"`
 	Description      *string `json:"description,omitempty"`
-	PubliccodeYmlUrl *string `json:"publiccodeYmlUrl,omitempty"`
+	PubliccodeYmlURL *string `json:"publiccodeYmlUrl,omitempty"`
 	Active           bool    `json:"active"`
 }
 
@@ -68,6 +68,7 @@ func NewClient() APIClient {
 	if kc := NewKeycloakTokenFetcherFromEnv(); kc != nil {
 		if fetched, err := kc.Fetch(context.Background()); err == nil && fetched != "" {
 			token = "Bearer " + fetched
+
 			log.Infof("Fetched bearer token via KeycloakTokenFetcher")
 		} else if err != nil {
 			log.Warnf("API_BEARER_TOKEN not set and Keycloak fetch failed: %v", err)
@@ -93,6 +94,7 @@ func (clt APIClient) Get(url string) (*http.Response, error) {
 	if clt.token != "" {
 		req.Header.Add("Authorization", clt.token)
 	}
+
 	if clt.xAPIKey != "" {
 		req.Header.Add("x-api-key", clt.xAPIKey)
 	}
@@ -114,9 +116,11 @@ func (clt APIClient) Post(url string, body []byte) (*http.Response, error) {
 	if clt.token != "" {
 		req.Header.Add("Authorization", clt.token)
 	}
+
 	if clt.xAPIKey != "" {
 		req.Header.Add("x-api-key", clt.xAPIKey)
 	}
+
 	req.Header.Add("Content-Type", "application/json")
 
 	return clt.retryableClient.Do(req)
@@ -140,14 +144,17 @@ func (clt APIClient) GetGitOrganisations() ([]common.Publisher, error) {
 
 		if res.StatusCode < 200 || res.StatusCode > 299 {
 			res.Body.Close()
+
 			return nil, fmt.Errorf("can't get gitOrganisations %s: HTTP status %s", reqURL, res.Status)
 		}
 
 		var gitOrgs []GitOrganisation
 		if err := json.NewDecoder(res.Body).Decode(&gitOrgs); err != nil {
 			res.Body.Close()
+
 			return nil, fmt.Errorf("can't parse GET %s response: %w", reqURL, err)
 		}
+
 		res.Body.Close()
 
 		for _, org := range gitOrgs {
@@ -177,8 +184,8 @@ func (clt APIClient) GetGitOrganisations() ([]common.Publisher, error) {
 			}
 
 			id := org.ID
-			if org.Organisation != nil && org.Organisation.Uri != "" {
-				id = org.Organisation.Uri
+			if org.Organisation != nil && org.Organisation.URI != "" {
+				id = org.Organisation.URI
 			}
 
 			publishers = append(publishers, common.Publisher{
@@ -195,9 +202,11 @@ func (clt APIClient) GetGitOrganisations() ([]common.Publisher, error) {
 		switch {
 		case nextPage > page:
 			page = nextPage
+
 			continue
 		case totalPages > 0 && page < totalPages:
 			page++
+
 			continue
 		default:
 			return publishers, nil
@@ -206,12 +215,18 @@ func (clt APIClient) GetGitOrganisations() ([]common.Publisher, error) {
 }
 
 // PostRepository creates a new repository entry.
-func (clt APIClient) PostRepository(repoURL string, name *string, description *string, publiccodeYml *string, active bool) (*Repository, error) {
+func (clt APIClient) PostRepository(
+	repoURL string,
+	name *string,
+	description *string,
+	publiccodeYml *string,
+	active bool,
+) (*Repository, error) {
 	body, err := json.Marshal(repositoryRequest{
 		RepositoryURL:    repoURL,
 		Name:             name,
 		Description:      description,
-		PubliccodeYmlUrl: publiccodeYml,
+		PubliccodeYmlURL: publiccodeYml,
 		Active:           active,
 	})
 	if err != nil {
@@ -219,7 +234,14 @@ func (clt APIClient) PostRepository(repoURL string, name *string, description *s
 	}
 
 	endpoint := joinPath(clt.baseURL, "/repositories")
-	log.Debugf("POST %s (repoUrl=%s name=%s descPresent=%t publiccode=%t)", endpoint, repoURL, deref(name), description != nil, publiccodeYml != nil)
+	log.Debugf(
+		"POST %s (repoUrl=%s name=%s descPresent=%t publiccode=%t)",
+		endpoint,
+		repoURL,
+		deref(name),
+		description != nil,
+		publiccodeYml != nil,
+	)
 
 	res, err := clt.Post(endpoint, body)
 	if err != nil {
@@ -266,13 +288,13 @@ func parseNextPage(linkHeader string) int {
 			continue
 		}
 
-		start := strings.Index(part, "<")
-		end := strings.Index(part, ">")
+		start, end := strings.Index(part, "<"), strings.Index(part, ">")
 		if start == -1 || end == -1 || end <= start+1 {
 			continue
 		}
 
 		link := strings.TrimSpace(part[start+1 : end])
+
 		u, err := url.Parse(link)
 		if err != nil {
 			continue
@@ -294,6 +316,7 @@ func headerInt(val string) int {
 	}
 
 	i, _ := strconv.Atoi(val)
+
 	return i
 }
 

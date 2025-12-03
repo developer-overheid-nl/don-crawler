@@ -100,7 +100,7 @@ linters:
     - wastedassign
     - whitespace
     # - wrapcheck
-    - wsl
+    - wsl_v5
 
   # disable:
     # # Not useful
@@ -146,6 +146,13 @@ linters:
       os-setenv: true
       os-create-temp: true
       os-temp-dir: false
+    wsl_v5:
+      allow-first-in-block: true
+      allow-whole-block: false
+      branch-max-lines: 2
+    tagliatelle:
+      case:
+        json: snake
 
   exclusions:
     generated: lax

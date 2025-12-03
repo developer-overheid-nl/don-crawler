@@ -26,9 +26,11 @@ func NewKeycloakTokenFetcher(httpClient *http.Client, tokenURL, clientID, client
 	if tokenURL == "" || clientID == "" || clientSecret == "" {
 		return nil
 	}
+
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
+
 	return &KeycloakTokenFetcher{
 		httpClient:   httpClient,
 		tokenURL:     strings.TrimSpace(tokenURL),
@@ -63,6 +65,7 @@ func (f *KeycloakTokenFetcher) Fetch(ctx context.Context) (string, error) {
 	if f == nil {
 		return "", errors.New("fetcher is nil")
 	}
+
 	if f.tokenURL == "" || f.clientID == "" || f.clientSecret == "" {
 		return "", errors.New("keycloak config missing")
 	}
@@ -76,6 +79,7 @@ func (f *KeycloakTokenFetcher) Fetch(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := f.httpClient.Do(req)
@@ -89,14 +93,17 @@ func (f *KeycloakTokenFetcher) Fetch(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("token request %s -> %d: %s", f.tokenURL, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
+	//nolint:tagliatelle // OAuth response uses snake_case keys
 	var tok struct {
 		AccessToken string `json:"access_token"`
 		TokenType   string `json:"token_type"`
 		ExpiresIn   int    `json:"expires_in"`
 	}
+
 	if err := json.Unmarshal(body, &tok); err != nil {
-		return "", fmt.Errorf("token parse error: %v; body=%s", err, string(body))
+		return "", fmt.Errorf("token parse error: %w; body=%s", err, string(body))
 	}
+
 	if tok.AccessToken == "" {
 		return "", errors.New("empty access_token in response")
 	}

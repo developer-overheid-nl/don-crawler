@@ -65,7 +65,7 @@ func NewCrawler(dryRun bool) *Crawler {
 }
 
 // CrawlSoftwareByAPIURL crawls a single software.
-func (c *Crawler) CrawlSoftwareByID(software string, publisher common.Publisher) error {
+func (c *Crawler) CrawlSoftwareByID(_ string, _ common.Publisher) error {
 	// var id string
 
 	// softwareURL, err := url.Parse(software)
@@ -218,7 +218,7 @@ func (c *Crawler) ProcessRepositories(repos chan common.Repository) {
 }
 
 // ProcessRepo looks for a publiccode.yml file in a repository, and if found it processes it.
-func (c *Crawler) ProcessRepo(repository common.Repository) { //nolint:maintidx
+func (c *Crawler) ProcessRepo(repository common.Repository) {
 	var logEntries []string
 
 	defer func() {
@@ -226,6 +226,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) { //nolint:maintidx
 			log.Info(e)
 		}
 	}()
+
 	if repository.FileRawURL == "" {
 		logEntries = append(logEntries, fmt.Sprintf("[%s] publiccode.yml not found", repository.Name))
 		log.Warnf("[%s] publiccode.yml missing, upserting placeholder with title/description", repository.Name)
@@ -285,6 +286,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) { //nolint:maintidx
 	}
 
 	var parsed publiccode.PublicCode
+
 	parsed, err = parser.Parse(repository.FileRawURL)
 
 	valid := true
@@ -317,20 +319,12 @@ func (c *Crawler) ProcessRepo(repository common.Repository) { //nolint:maintidx
 	} else {
 		logEntries = append(logEntries, fmt.Sprintf("[%s] GOOD publiccode.yml\n", repository.Name))
 	}
+
 	if c.DryRun {
 		log.Infof("[%s]: Skipping other steps (--dry-run)", repository.Name)
 	}
 
-	var aliases []string
-
 	url := repository.CanonicalURL.String()
-
-	// If the URL of the repo we have is different from the canonical URL
-	// we got from the code hosting API, it means the repo got renamed, so we
-	// add it to the slice of aliases for this software.
-	if repository.URL.String() != repository.CanonicalURL.String() {
-		aliases = append(aliases, repository.URL.String())
-	}
 
 	if parsed == nil {
 		logEntries = append(logEntries, fmt.Sprintf("[%s] parsing error: parsed publiccode is nil", repository.Name))
@@ -349,17 +343,26 @@ func (c *Crawler) ProcessRepo(repository common.Repository) { //nolint:maintidx
 		if title == "" {
 			title = repository.Name
 		}
+
 		desc := repository.Description
+
 		repoTitle := &title
 		if title == "" {
 			repoTitle = nil
 		}
+
 		var repoDesc *string
 		if desc != "" {
 			repoDesc = &desc
 		}
 
-		log.Debugf("[%s] posting repository (title=%q desc=%t publiccode=%t)", repository.Name, deref(repoTitle), repoDesc != nil, true)
+		log.Debugf(
+			"[%s] posting repository (title=%q desc=%t publiccode=%t)",
+			repository.Name,
+			deref(repoTitle),
+			repoDesc != nil,
+			true,
+		)
 
 		if _, err = c.apiClient.PostRepository(url, repoTitle, repoDesc, &repository.FileRawURL, true); err != nil {
 			logEntries = append(logEntries, fmt.Sprintf("[%s]: %s", repository.Name, err.Error()))
@@ -420,10 +423,7 @@ func (c *Crawler) crawl() error {
 	close(reposChan)
 	c.repositoriesWg.Wait()
 
-	log.Infof(
-		"Summary: Total repos scanned: %v. With good publiccode.yml file: %v. With bad publiccode.yml file: %v\n" +
-			"Repos with good publiccode.yml file: New repos: %v, Known repos: %v, Failures saving to API: %v",
-	)
+	log.Info("Crawler run completed")
 
 	return nil
 }
@@ -444,6 +444,7 @@ func (c *Crawler) upsertPlaceholderSoftware(
 	}
 
 	var description *string
+
 	if repository.Description != "" {
 		desc := repository.Description
 		description = &desc
@@ -457,7 +458,12 @@ func (c *Crawler) upsertPlaceholderSoftware(
 		return err
 	}
 
-	log.Warnf("[%s] placeholder software created (title=%q, hasDescription=%t)", repository.Name, deref(titlePointer), description != nil)
+	log.Warnf(
+		"[%s] placeholder software created (title=%q, hasDescription=%t)",
+		repository.Name,
+		deref(titlePointer),
+		description != nil,
+	)
 
 	*logEntries = append(
 		*logEntries,
