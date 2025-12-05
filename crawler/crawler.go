@@ -116,22 +116,18 @@ func (c *Crawler) CrawlSoftwareByID(_ string, _ common.Publisher) error {
 
 // CrawlPublishers processes a list of publishers.
 func (c *Crawler) CrawlPublishers(publishers []common.Publisher) error {
-	groupsNum := 0
-	for _, publisher := range publishers {
-		groupsNum += len(publisher.Organizations)
-	}
-
 	reposNum := 0
 	for _, publisher := range publishers {
 		reposNum += len(publisher.Repositories)
 	}
 
-	log.Infof("Scanning %d publishers (%d orgs + %d repositories)", len(publishers), groupsNum, reposNum)
+	log.Infof("Scanning %d publishers (%d repositories)", len(publishers), reposNum)
 
 	// Process every item in publishers.
 	for _, publisher := range publishers {
 		c.publishersWg.Add(1)
-		c.ScanPublisher(publisher)
+
+		go c.ScanPublisher(publisher)
 	}
 
 	// Close the repositories channel when all the publisher goroutines are done
@@ -152,30 +148,28 @@ func (c *Crawler) ScanPublisher(publisher common.Publisher) {
 
 	var err error
 
-	for _, u := range publisher.Organizations {
-		orgURL := (url.URL)(u)
+	orgURL := (url.URL)(publisher.Organization)
 
-		switch {
-		case vcsurl.IsGitHub(&orgURL):
-			err = c.gitHubScanner.ScanGroupOfRepos(orgURL, publisher, c.repositories)
-		case vcsurl.IsBitBucket(&orgURL):
-			err = c.bitBucketScanner.ScanGroupOfRepos(orgURL, publisher, c.repositories)
-		case vcsurl.IsGitLab(&orgURL):
-			err = c.gitLabScanner.ScanGroupOfRepos(orgURL, publisher, c.repositories)
-		default:
-			err = fmt.Errorf(
-				"publisher %s: unsupported code hosting platform for %s",
-				publisher.Name,
-				u.String(),
-			)
-		}
+	switch {
+	case vcsurl.IsGitHub(&orgURL):
+		err = c.gitHubScanner.ScanGroupOfRepos(orgURL, publisher, c.repositories)
+	case vcsurl.IsBitBucket(&orgURL):
+		err = c.bitBucketScanner.ScanGroupOfRepos(orgURL, publisher, c.repositories)
+	case vcsurl.IsGitLab(&orgURL):
+		err = c.gitLabScanner.ScanGroupOfRepos(orgURL, publisher, c.repositories)
+	default:
+		err = fmt.Errorf(
+			"publisher %s: unsupported code hosting platform for %s",
+			publisher.Name,
+			orgURL.String(),
+		)
+	}
 
-		if err != nil {
-			if errors.Is(err, scanner.ErrPubliccodeNotFound) {
-				log.Warnf("[%s] %s", orgURL.String(), err.Error())
-			} else {
-				log.Error(err)
-			}
+	if err != nil {
+		if errors.Is(err, scanner.ErrPubliccodeNotFound) {
+			log.Warnf("[%s] %s", orgURL.String(), err.Error())
+		} else {
+			log.Error(err)
 		}
 	}
 
@@ -364,7 +358,14 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 			true,
 		)
 
-		if _, err = c.apiClient.PostRepository(url, repoTitle, repoDesc, &repository.FileRawURL, true); err != nil {
+		if _, err = c.apiClient.PostRepository(
+			url,
+			repoTitle,
+			repoDesc,
+			&repository.FileRawURL,
+			orgURL(repository.Publisher),
+			true,
+		); err != nil {
 			logEntries = append(logEntries, fmt.Sprintf("[%s]: %s", repository.Name, err.Error()))
 			log.Errorf("[%s] PostRepository failed: %v", repository.Name, err)
 		}
@@ -454,7 +455,14 @@ func (c *Crawler) upsertPlaceholderSoftware(
 		return nil
 	}
 
-	if _, err := c.apiClient.PostRepository(url, titlePointer, description, nil, true); err != nil {
+	if _, err := c.apiClient.PostRepository(
+		url,
+		titlePointer,
+		description,
+		nil,
+		orgURL(repository.Publisher),
+		true,
+	); err != nil {
 		return err
 	}
 
@@ -479,6 +487,21 @@ func deref(v *string) string {
 	}
 
 	return *v
+}
+
+func orgURL(publisher common.Publisher) *string {
+	if publisher.OrganisationURL != "" {
+		val := publisher.OrganisationURL
+
+		return &val
+	}
+
+	val := publisher.Organization.String()
+	if val == "" {
+		return nil
+	}
+
+	return &val
 }
 
 // validateFile performs additional validations that are not strictly mandated

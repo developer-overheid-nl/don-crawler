@@ -40,17 +40,17 @@ func NewKeycloakTokenFetcher(httpClient *http.Client, tokenURL, clientID, client
 }
 
 // NewKeycloakTokenFetcherFromEnv builds a fetcher from env:
-// KEYCLOAK_TOKEN_URL or (KEYCLOAK_BASE_URL + KEYCLOAK_REALM),
-// and AUTH_CLIENT_ID / AUTH_CLIENT_SECRET.
+// KEYCLOAK_BASE_URL + KEYCLOAK_REALM, and AUTH_CLIENT_ID / AUTH_CLIENT_SECRET.
 func NewKeycloakTokenFetcherFromEnv() *KeycloakTokenFetcher {
 	base := strings.TrimSpace(os.Getenv("KEYCLOAK_BASE_URL"))
 	realm := strings.TrimSpace(os.Getenv("KEYCLOAK_REALM"))
-	tokenURL := strings.TrimSpace(os.Getenv("KEYCLOAK_TOKEN_URL"))
 
-	if tokenURL == "" && base != "" && realm != "" {
-		b := strings.TrimSuffix(base, "/")
-		tokenURL = fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", b, url.PathEscape(realm))
+	if base == "" || realm == "" {
+		return nil
 	}
+
+	b := strings.TrimSuffix(base, "/")
+	tokenURL := fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", b, url.PathEscape(realm))
 
 	return NewKeycloakTokenFetcher(
 		nil,

@@ -5,12 +5,18 @@ import (
 	"fmt"
 
 	"github.com/italia/publiccode-crawler/v4/cmd"
+	"github.com/joho/godotenv"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
 func main() {
 	log.SetLevel(log.DebugLevel)
+
+	// Load .env into process environment if present so Viper can pick it up.
+	if err := godotenv.Load(); err != nil {
+		log.Debugf(".env not loaded: %v", err)
+	}
 
 	// Read configurations.
 	viper.SetConfigName("config")

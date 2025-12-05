@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -24,22 +26,19 @@ type APIClient struct {
 	retryableClient *http.Client
 	token           string
 	xAPIKey         string
+	tokenFetcher    *KeycloakTokenFetcher
 }
 
 type GitOrganisation struct {
-	ID           string           `json:"id"`
-	Organisation *Organisation    `json:"organisation"`
-	CodeHosting  []CodeHostingDTO `json:"codeHosting"`
+	ID              string               `json:"id"`
+	Organisation    *OrganisationSummary `json:"organisation"`
+	URL             string               `json:"url"`
+	OrganisationURL string               `json:"organisationUrl"`
 }
 
-type Organisation struct {
+type OrganisationSummary struct {
 	URI   string `json:"uri"`
 	Label string `json:"label"`
-}
-
-type CodeHostingDTO struct {
-	URL   string `json:"url"`
-	Group *bool  `json:"group"`
 }
 
 type Repository struct {
@@ -55,6 +54,7 @@ type repositoryRequest struct {
 	Name             *string `json:"name,omitempty"`
 	Description      *string `json:"description,omitempty"`
 	PubliccodeYmlURL *string `json:"publiccodeYmlUrl,omitempty"`
+	OrganisationURL  *string `json:"organisationUrl,omitempty"`
 	Active           bool    `json:"active"`
 }
 
@@ -64,9 +64,10 @@ func NewClient() APIClient {
 	rc.HTTPClient.Timeout = 60 * time.Second
 	retryableClient := rc.StandardClient()
 	token := ""
+	tokenFetcher := NewKeycloakTokenFetcherFromEnv()
 
-	if kc := NewKeycloakTokenFetcherFromEnv(); kc != nil {
-		if fetched, err := kc.Fetch(context.Background()); err == nil && fetched != "" {
+	if tokenFetcher != nil {
+		if fetched, err := tokenFetcher.Fetch(context.Background()); err == nil && fetched != "" {
 			token = "Bearer " + fetched
 
 			log.Infof("Fetched bearer token via KeycloakTokenFetcher")
@@ -82,48 +83,89 @@ func NewClient() APIClient {
 		retryableClient: retryableClient,
 		token:           token,
 		xAPIKey:         viper.GetString("API_X_API_KEY"),
+		tokenFetcher:    tokenFetcher,
 	}
 }
 
-func (clt APIClient) Get(url string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+func (clt *APIClient) Get(url string) (*http.Response, error) {
+	doRequest := func(authToken string) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		if authToken != "" {
+			req.Header.Add("Authorization", authToken)
+		}
+
+		if clt.xAPIKey != "" {
+			req.Header.Add("x-api-key", clt.xAPIKey)
+		}
+
+		return clt.retryableClient.Do(req)
+	}
+
+	res, err := doRequest(clt.token)
 	if err != nil {
 		return nil, err
 	}
 
-	if clt.token != "" {
-		req.Header.Add("Authorization", clt.token)
+	if res.StatusCode != http.StatusUnauthorized {
+		return res, nil
 	}
 
-	if clt.xAPIKey != "" {
-		req.Header.Add("x-api-key", clt.xAPIKey)
+	res.Body.Close()
+
+	token, refreshErr := clt.refreshToken(context.Background())
+	if refreshErr != nil {
+		return nil, fmt.Errorf("GET %s unauthorized and token refresh failed: %w", url, refreshErr)
 	}
 
-	return clt.retryableClient.Do(req)
+	return doRequest(token)
 }
 
-func (clt APIClient) Post(url string, body []byte) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(
-		context.Background(),
-		http.MethodPost,
-		url,
-		bytes.NewBuffer(body),
-	)
+func (clt *APIClient) Post(url string, body []byte) (*http.Response, error) {
+	doRequest := func(authToken string) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(
+			context.Background(),
+			http.MethodPost,
+			url,
+			bytes.NewBuffer(body),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if authToken != "" {
+			req.Header.Add("Authorization", authToken)
+		}
+
+		if clt.xAPIKey != "" {
+			req.Header.Add("x-api-key", clt.xAPIKey)
+		}
+
+		req.Header.Add("Content-Type", "application/json")
+
+		return clt.retryableClient.Do(req)
+	}
+
+	res, err := doRequest(clt.token)
 	if err != nil {
 		return nil, err
 	}
 
-	if clt.token != "" {
-		req.Header.Add("Authorization", clt.token)
+	if res.StatusCode != http.StatusUnauthorized {
+		return res, nil
 	}
 
-	if clt.xAPIKey != "" {
-		req.Header.Add("x-api-key", clt.xAPIKey)
+	res.Body.Close()
+
+	token, refreshErr := clt.refreshToken(context.Background())
+	if refreshErr != nil {
+		return nil, fmt.Errorf("POST %s unauthorized and token refresh failed: %w", url, refreshErr)
 	}
 
-	req.Header.Add("Content-Type", "application/json")
-
-	return clt.retryableClient.Do(req)
+	return doRequest(token)
 }
 
 // GetGitOrganisations returns git organisations and their code hosting URLs.
@@ -158,24 +200,25 @@ func (clt APIClient) GetGitOrganisations() ([]common.Publisher, error) {
 		res.Body.Close()
 
 		for _, org := range gitOrgs {
-			var groups, repos []internalUrl.URL
+			gitURL := org.URL
+			if gitURL == "" {
+				gitURL = org.OrganisationURL
+			}
 
-			for _, ch := range org.CodeHosting {
-				u, err := url.Parse(ch.URL)
+			orgForPost := org.OrganisationURL
+			if orgForPost == "" && org.Organisation != nil {
+				orgForPost = org.Organisation.URI
+			}
+
+			var orgURL url.URL
+
+			if gitURL != "" {
+				u, err := url.Parse(gitURL)
 				if err != nil {
-					return nil, fmt.Errorf("can't parse codeHosting URL %s: %w", ch.URL, err)
+					return nil, fmt.Errorf("can't parse organisation url %s: %w", gitURL, err)
 				}
 
-				isGroup := true
-				if ch.Group != nil {
-					isGroup = *ch.Group
-				}
-
-				if isGroup {
-					groups = append(groups, (internalUrl.URL)(*u))
-				} else {
-					repos = append(repos, (internalUrl.URL)(*u))
-				}
+				orgURL = *u
 			}
 
 			name := org.ID
@@ -189,10 +232,11 @@ func (clt APIClient) GetGitOrganisations() ([]common.Publisher, error) {
 			}
 
 			publishers = append(publishers, common.Publisher{
-				ID:            id,
-				Name:          name,
-				Organizations: groups,
-				Repositories:  repos,
+				ID:              id,
+				Name:            name,
+				Organization:    (internalUrl.URL)(orgURL),
+				Repositories:    nil,
+				OrganisationURL: orgForPost,
 			})
 		}
 
@@ -220,6 +264,7 @@ func (clt APIClient) PostRepository(
 	name *string,
 	description *string,
 	publiccodeYml *string,
+	organisationURL *string,
 	active bool,
 ) (*Repository, error) {
 	body, err := json.Marshal(repositoryRequest{
@@ -227,6 +272,7 @@ func (clt APIClient) PostRepository(
 		Name:             name,
 		Description:      description,
 		PubliccodeYmlURL: publiccodeYml,
+		OrganisationURL:  organisationURL,
 		Active:           active,
 	})
 	if err != nil {
@@ -235,12 +281,13 @@ func (clt APIClient) PostRepository(
 
 	endpoint := joinPath(clt.baseURL, "/repositories")
 	log.Debugf(
-		"POST %s (repoUrl=%s name=%s descPresent=%t publiccode=%t)",
+		"POST %s (repoUrl=%s name=%s descPresent=%t publiccode=%t orgUrl=%s)",
 		endpoint,
 		repoURL,
 		deref(name),
 		description != nil,
 		publiccodeYml != nil,
+		deref(organisationURL),
 	)
 
 	res, err := clt.Post(endpoint, body)
@@ -253,7 +300,10 @@ func (clt APIClient) PostRepository(
 	log.Debugf("POST %s -> %s (rl-rem=%s)", endpoint, res.Status, res.Header.Get("RateLimit-Remaining"))
 
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return nil, fmt.Errorf("can't create repository: API replied with HTTP %s", res.Status)
+		respBody, _ := io.ReadAll(res.Body)
+		body := strings.TrimSpace(string(respBody))
+
+		return nil, fmt.Errorf("can't create repository: API replied with HTTP %s: %s", res.Status, body)
 	}
 
 	created := &Repository{}
@@ -262,6 +312,21 @@ func (clt APIClient) PostRepository(
 	}
 
 	return created, nil
+}
+
+func (clt *APIClient) refreshToken(ctx context.Context) (string, error) {
+	if clt.tokenFetcher == nil {
+		return "", errors.New("token fetcher not configured")
+	}
+
+	fetched, err := clt.tokenFetcher.Fetch(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	clt.token = "Bearer " + fetched
+
+	return clt.token, nil
 }
 
 func joinPath(base string, paths ...string) string {

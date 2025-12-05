@@ -11,10 +11,11 @@ import (
 var fileReaderInject = os.ReadFile
 
 type Publisher struct {
-	ID            string    `yaml:"id"`
-	Name          string    `yaml:"name"`
-	Organizations []url.URL `yaml:"orgs"`
-	Repositories  []url.URL `yaml:"repos"`
+	ID              string    `yaml:"id" json:"id"`
+	Name            string    `yaml:"name" json:"name"`
+	Organization    url.URL   `yaml:"org" json:"organization"`
+	Repositories    []url.URL `yaml:"repos" json:"repositories"`
+	OrganisationURL string    `yaml:"organisationUrl,omitempty" json:"organisationUrl,omitempty"`
 }
 
 // LoadPublishers loads the publishers YAML file and returns a slice of Publisher.
