@@ -30,10 +30,9 @@ type APIClient struct {
 }
 
 type GitOrganisation struct {
-	ID              string               `json:"id"`
-	Organisation    *OrganisationSummary `json:"organisation"`
-	URL             string               `json:"url"`
-	OrganisationURL string               `json:"organisationUrl"`
+	ID           string               `json:"id"`
+	Organisation *OrganisationSummary `json:"organisation"`
+	URL          string               `json:"url"`
 }
 
 type OrganisationSummary struct {
@@ -175,7 +174,7 @@ func (clt APIClient) GetGitOrganisations() ([]common.Publisher, error) {
 	publishers := make([]common.Publisher, 0, 25)
 
 	for {
-		reqURL := fmt.Sprintf("%s?page=%d&perPage=%d", joinPath(clt.baseURL, "/gitOrganisations"), page, perPage)
+		reqURL := fmt.Sprintf("%s?page=%d&perPage=%d", joinPath(clt.baseURL, "/git-organisations"), page, perPage)
 
 		res, err := clt.Get(reqURL)
 		if err != nil {
@@ -201,12 +200,10 @@ func (clt APIClient) GetGitOrganisations() ([]common.Publisher, error) {
 
 		for _, org := range gitOrgs {
 			gitURL := org.URL
-			if gitURL == "" {
-				gitURL = org.OrganisationURL
-			}
 
-			orgForPost := org.OrganisationURL
-			if orgForPost == "" && org.Organisation != nil {
+			orgForPost := ""
+
+			if org.Organisation != nil && org.Organisation.URI != "" {
 				orgForPost = org.Organisation.URI
 			}
 
