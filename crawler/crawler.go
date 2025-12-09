@@ -217,6 +217,8 @@ func (c *Crawler) ProcessRepositories(repos chan common.Repository) {
 }
 
 // ProcessRepo looks for a publiccode.yml file in a repository, and if found it processes it.
+//
+//nolint:maintidx
 func (c *Crawler) ProcessRepo(repository common.Repository) {
 	var logEntries []string
 

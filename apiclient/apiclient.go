@@ -49,10 +49,10 @@ type Repository struct {
 }
 
 type repositoryRequest struct {
-	Url              string  `json:"url"`
+	URL              string  `json:"url"`
 	Name             *string `json:"name,omitempty"`
 	ShortDescription *string `json:"shortDescription,omitempty"`
-	PublicCodeUrl    *string `json:"publicCodeUrl,omitempty"`
+	PublicCodeURL    *string `json:"publicCodeUrl,omitempty"`
 	OrganisationURI  string  `json:"organisationUri"`
 }
 
@@ -261,13 +261,13 @@ func (clt APIClient) PostRepository(
 	description *string,
 	publiccodeYml *string,
 	organisationURI string,
-	active bool,
+	_ bool,
 ) (*Repository, error) {
 	body, err := json.Marshal(repositoryRequest{
-		Url:              repoURL,
+		URL:              repoURL,
 		Name:             name,
 		ShortDescription: description,
-		PublicCodeUrl:    publiccodeYml,
+		PublicCodeURL:    publiccodeYml,
 		OrganisationURI:  organisationURI,
 	})
 	if err != nil {
@@ -284,6 +284,7 @@ func (clt APIClient) PostRepository(
 		publiccodeYml != nil,
 		organisationURI,
 	)
+
 	if log.IsLevelEnabled(log.DebugLevel) {
 		log.Debugf("POST %s payload=%s", endpoint, strings.TrimSpace(string(body)))
 	}
