@@ -49,12 +49,11 @@ type Repository struct {
 }
 
 type repositoryRequest struct {
-	RepositoryURL    string  `json:"repositoryUrl"`
+	Url              string  `json:"url"`
 	Name             *string `json:"name,omitempty"`
-	Description      *string `json:"description,omitempty"`
-	PubliccodeYmlURL *string `json:"publiccodeYmlUrl,omitempty"`
-	OrganisationURL  *string `json:"organisationUrl,omitempty"`
-	Active           bool    `json:"active"`
+	ShortDescription *string `json:"shortDescription,omitempty"`
+	PublicCodeUrl    *string `json:"publicCodeUrl,omitempty"`
+	OrganisationURI  string  `json:"organisationUri"`
 }
 
 func NewClient() APIClient {
@@ -261,16 +260,15 @@ func (clt APIClient) PostRepository(
 	name *string,
 	description *string,
 	publiccodeYml *string,
-	organisationURL *string,
+	organisationURI string,
 	active bool,
 ) (*Repository, error) {
 	body, err := json.Marshal(repositoryRequest{
-		RepositoryURL:    repoURL,
+		Url:              repoURL,
 		Name:             name,
-		Description:      description,
-		PubliccodeYmlURL: publiccodeYml,
-		OrganisationURL:  organisationURL,
-		Active:           active,
+		ShortDescription: description,
+		PublicCodeUrl:    publiccodeYml,
+		OrganisationURI:  organisationURI,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("can't marshal repository: %w", err)
@@ -278,14 +276,15 @@ func (clt APIClient) PostRepository(
 
 	endpoint := joinPath(clt.baseURL, "/repositories")
 	log.Debugf(
-		"POST %s (repoUrl=%s name=%s descPresent=%t publiccode=%t orgUrl=%s)",
+		"POST %s (repoUrl=%s name=%s descPresent=%t publiccode=%t orgUri=%s)",
 		endpoint,
 		repoURL,
 		deref(name),
 		description != nil,
 		publiccodeYml != nil,
-		deref(organisationURL),
+		organisationURI,
 	)
+	log.Debugf("POST %s payload=%s", endpoint, strings.TrimSpace(string(body)))
 
 	res, err := clt.Post(endpoint, body)
 	if err != nil {

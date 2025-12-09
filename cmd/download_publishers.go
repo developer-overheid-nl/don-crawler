@@ -64,6 +64,7 @@ var downloadPublishersCmd = &cobra.Command{
 					u, _ := url.Parse(i.URL)
 					// If this Id is already known, replace the org URL
 					publishers[idx].Organization = (ymlurl.URL)(*u)
+					publishers[idx].OrganisationURL = i.URL
 
 					continue REPOLIST
 				}
@@ -72,9 +73,10 @@ var downloadPublishersCmd = &cobra.Command{
 			u, _ := url.Parse(i.URL)
 			// If this IPA code is not known, append a new publisher item
 			publishers = append(publishers, common.Publisher{
-				Name:         i.IPA,
-				ID:           i.IPA,
-				Organization: (ymlurl.URL)(*u),
+				Name:            i.IPA,
+				ID:              i.IPA,
+				Organization:    (ymlurl.URL)(*u),
+				OrganisationURL: i.URL,
 			})
 		}
 

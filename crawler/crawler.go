@@ -39,6 +39,11 @@ type Crawler struct {
 	apiClient apiclient.APIClient
 }
 
+var (
+	repoTitleRegexp = regexp.MustCompile(`(?i)<title[^>]*>([^<]*)</title>`)
+	repoDescRegexp  = regexp.MustCompile(`(?i)<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["'][^>]*>`)
+)
+
 // NewCrawler initializes a new Crawler object and connects to Elasticsearch (if dryRun == false).
 func NewCrawler(dryRun bool) *Crawler {
 	var c Crawler
@@ -225,6 +230,21 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		logEntries = append(logEntries, fmt.Sprintf("[%s] publiccode.yml not found", repository.Name))
 		log.Warnf("[%s] publiccode.yml missing, upserting placeholder with title/description", repository.Name)
 
+		if repository.Title == "" || repository.Description == "" {
+			title, desc, metaErr := c.fetchRepoMetadata(repository)
+			if metaErr != nil {
+				logEntries = append(logEntries, fmt.Sprintf("[%s] failed to fetch repo metadata: %v", repository.Name, metaErr))
+			} else {
+				if repository.Title == "" && title != "" {
+					repository.Title = title
+				}
+
+				if repository.Description == "" && desc != "" {
+					repository.Description = desc
+				}
+			}
+		}
+
 		if err := c.upsertPlaceholderSoftware(repository, &logEntries); err != nil {
 			logEntries = append(logEntries, fmt.Sprintf("[%s]: %s", repository.Name, err.Error()))
 			log.Errorf("[%s] upsert placeholder failed: %v", repository.Name, err)
@@ -338,17 +358,14 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 			title = repository.Name
 		}
 
-		desc := repository.Description
+		desc := ensureDescription(repository)
 
 		repoTitle := &title
 		if title == "" {
 			repoTitle = nil
 		}
 
-		var repoDesc *string
-		if desc != "" {
-			repoDesc = &desc
-		}
+		repoDesc := &desc
 
 		log.Debugf(
 			"[%s] posting repository (title=%q desc=%t publiccode=%t)",
@@ -363,7 +380,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 			repoTitle,
 			repoDesc,
 			&repository.FileRawURL,
-			orgURL(repository.Publisher),
+			orgURI(repository.Publisher),
 			true,
 		); err != nil {
 			logEntries = append(logEntries, fmt.Sprintf("[%s]: %s", repository.Name, err.Error()))
@@ -444,12 +461,8 @@ func (c *Crawler) upsertPlaceholderSoftware(
 		titlePointer = &titleValue
 	}
 
-	var description *string
-
-	if repository.Description != "" {
-		desc := repository.Description
-		description = &desc
-	}
+	desc := ensureDescription(repository)
+	description := &desc
 
 	if c.DryRun {
 		return nil
@@ -460,7 +473,7 @@ func (c *Crawler) upsertPlaceholderSoftware(
 		titlePointer,
 		description,
 		nil,
-		orgURL(repository.Publisher),
+		orgURI(repository.Publisher),
 		true,
 	); err != nil {
 		return err
@@ -481,6 +494,64 @@ func (c *Crawler) upsertPlaceholderSoftware(
 	return nil
 }
 
+func (c *Crawler) fetchRepoMetadata(repository common.Repository) (string, string, error) {
+	repoURL := strings.TrimSuffix(repository.URL.String(), ".git")
+	if repoURL == "" {
+		repoURL = strings.TrimSuffix(repository.CanonicalURL.String(), ".git")
+	}
+
+	if repoURL == "" {
+		return "", "", fmt.Errorf("repository URL empty")
+	}
+
+	resp, err := httpclient.GetURL(repoURL, repository.Headers)
+	if err != nil {
+		return "", "", err
+	}
+
+	if resp.Status.Code != http.StatusOK {
+		return "", "", fmt.Errorf("status %d", resp.Status.Code)
+	}
+
+	body := resp.Body
+
+	return extractRepoTitle(body), extractRepoDescription(body), nil
+}
+
+func extractRepoTitle(body []byte) string {
+	match := repoTitleRegexp.FindSubmatch(body)
+	if len(match) < 2 {
+		return ""
+	}
+
+	return strings.TrimSpace(string(match[1]))
+}
+
+func extractRepoDescription(body []byte) string {
+	match := repoDescRegexp.FindSubmatch(body)
+	if len(match) < 2 {
+		return ""
+	}
+
+	return strings.TrimSpace(string(match[1]))
+}
+
+func ensureDescription(repository common.Repository) string {
+	if repository.Description != "" {
+		return repository.Description
+	}
+
+	if repository.Title != "" {
+		return repository.Title
+	}
+
+	if repository.Name != "" {
+		return repository.Name
+	}
+
+	return "No description provided"
+}
+
 func deref(v *string) string {
 	if v == nil {
 		return ""
@@ -489,19 +560,12 @@ func deref(v *string) string {
 	return *v
 }
 
-func orgURL(publisher common.Publisher) *string {
+func orgURI(publisher common.Publisher) string {
 	if publisher.OrganisationURL != "" {
-		val := publisher.OrganisationURL
-
-		return &val
+		return publisher.OrganisationURL
 	}
 
-	val := publisher.Organization.String()
-	if val == "" {
-		return nil
-	}
-
-	return &val
+	return publisher.Organization.String()
 }
 
 // validateFile performs additional validations that are not strictly mandated
