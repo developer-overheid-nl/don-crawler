@@ -284,7 +284,9 @@ func (clt APIClient) PostRepository(
 		publiccodeYml != nil,
 		organisationURI,
 	)
-	log.Debugf("POST %s payload=%s", endpoint, strings.TrimSpace(string(body)))
+	if log.IsLevelEnabled(log.DebugLevel) {
+		log.Debugf("POST %s payload=%s", endpoint, strings.TrimSpace(string(body)))
+	}
 
 	res, err := clt.Post(endpoint, body)
 	if err != nil {
