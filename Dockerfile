@@ -14,4 +14,4 @@ RUN go build -o main main.go
 
 EXPOSE 1337
 
-CMD ["main", "crawl"]
+CMD ["./main", "crawl"]
