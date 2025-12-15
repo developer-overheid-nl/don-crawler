@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/italia/publiccode-crawler/v4/common"
 	"github.com/ktrysmt/go-bitbucket"
@@ -16,6 +17,14 @@ type BitBucketScanner struct {
 
 func NewBitBucketScanner() Scanner {
 	return BitBucketScanner{client: bitbucket.NewBasicAuth("", "")}
+}
+
+func bitbucketTime(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+
+	return *t
 }
 
 // RegisterBitbucketAPI register the crawler function for Bitbucket API.
@@ -76,6 +85,8 @@ func (scanner BitBucketScanner) ScanGroupOfRepos(
 				URL:          *u,
 				CanonicalURL: *u,
 				GitBranch:    r.Mainbranch.Name,
+				CreatedAt:    bitbucketTime(r.CreatedOnTime),
+				UpdatedAt:    bitbucketTime(r.UpdatedOnTime),
 				Publisher:    publisher,
 			}
 		}
@@ -134,6 +145,8 @@ func (scanner BitBucketScanner) ScanRepo(
 			URL:          url,
 			CanonicalURL: *canonicalURL,
 			GitBranch:    repo.Mainbranch.Name,
+			CreatedAt:    bitbucketTime(repo.CreatedOnTime),
+			UpdatedAt:    bitbucketTime(repo.UpdatedOnTime),
 			Publisher:    publisher,
 		}
 	}

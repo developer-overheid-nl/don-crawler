@@ -214,6 +214,8 @@ Retry:
 		URL:          url,
 		CanonicalURL: *canonicalURL,
 		GitBranch:    *repo.DefaultBranch,
+		CreatedAt:    repo.GetCreatedAt().Time,
+		UpdatedAt:    repo.GetUpdatedAt().Time,
 		Publisher:    publisher,
 		Headers:      make(map[string]string),
 	}

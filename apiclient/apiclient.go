@@ -41,19 +41,23 @@ type OrganisationSummary struct {
 }
 
 type Repository struct {
-	ID            string  `json:"id"`
-	RepositoryURL string  `json:"repositoryUrl"`
-	Name          *string `json:"name"`
-	Description   *string `json:"description"`
-	PublicCodeURL *string `json:"publicCodeUrl"`
+	ID            string    `json:"id"`
+	RepositoryURL string    `json:"repositoryUrl"`
+	Name          *string   `json:"name"`
+	Description   *string   `json:"description"`
+	PublicCodeURL *string   `json:"publicCodeUrl"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 type repositoryRequest struct {
-	URL              string  `json:"url"`
-	Name             *string `json:"name,omitempty"`
-	ShortDescription *string `json:"shortDescription,omitempty"`
-	PublicCodeURL    *string `json:"publicCodeUrl,omitempty"`
-	OrganisationURI  string  `json:"organisationUri"`
+	URL              string    `json:"url"`
+	Name             *string   `json:"name,omitempty"`
+	ShortDescription *string   `json:"shortDescription,omitempty"`
+	PublicCodeURL    *string   `json:"publicCodeUrl,omitempty"`
+	OrganisationURI  string    `json:"organisationUri"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 func NewClient() APIClient {
@@ -261,6 +265,8 @@ func (clt APIClient) PostRepository(
 	description *string,
 	publiccodeYml *string,
 	organisationURI string,
+	createdAt time.Time,
+	updatedAt time.Time,
 	_ bool,
 ) (*Repository, error) {
 	body, err := json.Marshal(repositoryRequest{
@@ -269,6 +275,8 @@ func (clt APIClient) PostRepository(
 		ShortDescription: description,
 		PublicCodeURL:    publiccodeYml,
 		OrganisationURI:  organisationURI,
+		CreatedAt:        createdAt,
+		UpdatedAt:        updatedAt,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("can't marshal repository: %w", err)

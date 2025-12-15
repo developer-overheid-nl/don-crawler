@@ -2,6 +2,7 @@ package common //revive:disable:var-naming
 
 import (
 	"net/url"
+	"time"
 )
 
 // Repository is a single code repository. FileRawURL contains the direct url to the raw file.
@@ -13,6 +14,8 @@ type Repository struct {
 	CanonicalURL url.URL
 	FileRawURL   string
 	GitBranch    string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 	Publisher    Publisher
 	Headers      map[string]string
 }

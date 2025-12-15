@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/italia/publiccode-crawler/v4/common"
 	log "github.com/sirupsen/logrus"
@@ -104,6 +105,22 @@ func isGitlabGroup(u url.URL) bool {
 		len(u.Path) > 1)
 }
 
+func gitlabTime(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+
+	return *t
+}
+
+func gitlabUpdatedAt(project gitlab.Project) time.Time {
+	if project.LastActivityAt != nil {
+		return *project.LastActivityAt
+	}
+
+	return gitlabTime(project.UpdatedAt)
+}
+
 // generateGitlabRawURL returns the file Gitlab specific file raw url.
 func generateGitlabRawURL(baseURL, defaultBranch string) (string, error) {
 	u, err := url.Parse(baseURL)
@@ -200,6 +217,8 @@ func addProject(
 			URL:          *originalURL,
 			CanonicalURL: *canonicalURL,
 			GitBranch:    project.DefaultBranch,
+			CreatedAt:    gitlabTime(project.CreatedAt),
+			UpdatedAt:    gitlabUpdatedAt(project),
 			Publisher:    publisher,
 		}
 	}

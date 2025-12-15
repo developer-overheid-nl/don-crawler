@@ -383,6 +383,8 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 			repoDesc,
 			&repository.FileRawURL,
 			orgURI(repository.Publisher),
+			repository.CreatedAt,
+			repository.UpdatedAt,
 			true,
 		); err != nil {
 			logEntries = append(logEntries, fmt.Sprintf("[%s]: %s", repository.Name, err.Error()))
@@ -476,6 +478,8 @@ func (c *Crawler) upsertPlaceholderSoftware(
 		description,
 		nil,
 		orgURI(repository.Publisher),
+		repository.CreatedAt,
+		repository.UpdatedAt,
 		true,
 	); err != nil {
 		return err
