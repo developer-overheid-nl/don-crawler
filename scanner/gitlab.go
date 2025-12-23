@@ -25,9 +25,7 @@ func (scanner GitLabScanner) ScanGroupOfRepos(
 ) error {
 	log.Debugf("GitLabScanner.ScanGroupOfRepos(%s)", url.String())
 
-	apiURL, _ := url.Parse("/api/v4")
-
-	git, err := gitlab.NewClient(os.Getenv("GITLAB_TOKEN"), gitlab.WithBaseURL(apiURL.String()))
+	git, err := newGitlabClient(url)
 	if err != nil {
 		return err
 	}
@@ -77,9 +75,7 @@ func (scanner GitLabScanner) ScanRepo(
 ) error {
 	log.Debugf("GitLabScanner.ScanRepo(%s)", url.String())
 
-	apiURL, _ := url.Parse("/api/v4")
-
-	git, err := gitlab.NewClient(os.Getenv("GITLAB_TOKEN"), gitlab.WithBaseURL(apiURL.String()))
+	git, err := newGitlabClient(url)
 	if err != nil {
 		return err
 	}
@@ -119,6 +115,18 @@ func gitlabUpdatedAt(project gitlab.Project) time.Time {
 	}
 
 	return gitlabTime(project.UpdatedAt)
+}
+
+func newGitlabClient(u url.URL) (*gitlab.Client, error) {
+	token := os.Getenv("GITLAB_TOKEN")
+
+	if u.Scheme == "" || u.Host == "" {
+		return gitlab.NewClient(token)
+	}
+
+	base := fmt.Sprintf("%s://%s/api/v4", u.Scheme, u.Host)
+
+	return gitlab.NewClient(token, gitlab.WithBaseURL(base))
 }
 
 // generateGitlabRawURL returns the file Gitlab specific file raw url.

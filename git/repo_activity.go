@@ -340,3 +340,34 @@ func meanActivity(points map[int]float64) float64 {
 
 	return total / float64(len(points))
 }
+
+// LastCommitTime returns the commit time of HEAD.
+func LastCommitTime(repository common.Repository) (time.Time, error) {
+	if repository.Name == "" {
+		return time.Time{}, errors.New("cannot determine last activity without repository name")
+	}
+
+	vendor, repo := common.SplitFullName(repository.Name)
+	path := filepath.Join(viper.GetString("DATADIR"), "repos", repository.URL.Host, vendor, repo, "gitClone")
+
+	if _, err := os.Stat(path); err != nil {
+		return time.Time{}, err
+	}
+
+	r, err := git.PlainOpen(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	ref, err := r.Head()
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	commit, err := r.CommitObject(ref.Hash())
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	return commit.Author.When, nil
+}

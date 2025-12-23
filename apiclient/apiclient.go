@@ -48,6 +48,7 @@ type Repository struct {
 	PublicCodeURL *string   `json:"publicCodeUrl"`
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
+	LastActivity  time.Time `json:"lastActivity"`
 }
 
 type repositoryRequest struct {
@@ -57,7 +58,8 @@ type repositoryRequest struct {
 	PublicCodeURL    *string   `json:"publicCodeUrl,omitempty"`
 	OrganisationURI  string    `json:"organisationUri"`
 	CreatedAt        time.Time `json:"createdAt"`
-	UpdatedAt        time.Time `json:"updatedAt"`
+	LastCrawledAt    time.Time `json:"lastCrawledAt"`
+	LastActivityAt   time.Time `json:"lastActivityAt,omitempty"`
 }
 
 func NewClient() APIClient {
@@ -266,8 +268,8 @@ func (clt APIClient) PostRepository(
 	publiccodeYml *string,
 	organisationURI string,
 	createdAt time.Time,
-	updatedAt time.Time,
-	_ bool,
+	lastCrawledAt time.Time,
+	lastActivityAt time.Time,
 ) (*Repository, error) {
 	body, err := json.Marshal(repositoryRequest{
 		URL:              repoURL,
@@ -276,7 +278,8 @@ func (clt APIClient) PostRepository(
 		PublicCodeURL:    publiccodeYml,
 		OrganisationURI:  organisationURI,
 		CreatedAt:        createdAt,
-		UpdatedAt:        updatedAt,
+		LastCrawledAt:    lastCrawledAt,
+		LastActivityAt:   lastActivityAt,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("can't marshal repository: %w", err)

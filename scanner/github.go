@@ -29,12 +29,17 @@ func NewGitHubScanner() Scanner {
 	ctx := context.Background()
 	token := os.Getenv("GITHUB_TOKEN")
 
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(ctx, ts)
+	var httpClient *http.Client
+	if token == "" {
+		httpClient = http.DefaultClient
+	} else {
+		ts := oauth2.StaticTokenSource(
+			&oauth2.Token{AccessToken: token},
+		)
+		httpClient = oauth2.NewClient(ctx, ts)
+	}
 
-	client := github.NewClient(tc)
+	client := github.NewClient(httpClient)
 
 	return GitHubScanner{client: client, ctx: ctx}
 }
@@ -140,6 +145,11 @@ func (scanner GitHubScanner) ScanRepo(
 
 	orgName := splitted[0]
 	repoName := splitted[1]
+	repoNameNormalized := strings.TrimSuffix(repoName, ".git")
+	if strings.EqualFold(repoNameNormalized, ".github") {
+		log.Debugf("Skipping GitHub .github repository: %s", url.String())
+		return nil
+	}
 
 Retry:
 	repo, resp, err := scanner.client.Repositories.Get(scanner.ctx, orgName, repoName)

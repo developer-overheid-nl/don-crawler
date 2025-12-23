@@ -17,7 +17,6 @@ import (
 	"github.com/italia/publiccode-crawler/v4/common"
 	"github.com/italia/publiccode-crawler/v4/git"
 	"github.com/italia/publiccode-crawler/v4/scanner"
-	publiccode "github.com/italia/publiccode-parser-go/v5"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -221,6 +220,7 @@ func (c *Crawler) ProcessRepositories(repos chan common.Repository) {
 //nolint:maintidx
 func (c *Crawler) ProcessRepo(repository common.Repository) {
 	var logEntries []string
+	var err error
 
 	defer func() {
 		for _, e := range logEntries {
@@ -230,7 +230,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 
 	if repository.FileRawURL == "" {
 		logEntries = append(logEntries, fmt.Sprintf("[%s] publiccode.yml not found", repository.Name))
-		log.Warnf("[%s] publiccode.yml missing, upserting placeholder with title/description", repository.Name)
+		log.Warnf("[%s] publiccode.yml missing, will proceed without it", repository.Name)
 
 		if repository.Title == "" || repository.Description == "" {
 			title, desc, metaErr := c.fetchRepoMetadata(repository)
@@ -246,112 +246,42 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 				}
 			}
 		}
-
-		if err := c.upsertPlaceholderSoftware(repository, &logEntries); err != nil {
-			logEntries = append(logEntries, fmt.Sprintf("[%s]: %s", repository.Name, err.Error()))
-			log.Errorf("[%s] upsert placeholder failed: %v", repository.Name, err)
-		}
-
-		return
-	}
-
-	resp, err := httpclient.GetURL(repository.FileRawURL, repository.Headers)
-	statusCode := resp.Status.Code
-
-	if statusCode != http.StatusOK || err != nil {
-		logEntries = append(
-			logEntries,
-			fmt.Sprintf("[%s] Failed to GET publiccode.yml (status: %d)", repository.Name, statusCode),
-		)
-
-		if err := c.upsertPlaceholderSoftware(repository, &logEntries); err != nil {
-			logEntries = append(logEntries, fmt.Sprintf("[%s]: %s", repository.Name, err.Error()))
-			log.Errorf("[%s] upsert placeholder after GET failure: %v", repository.Name, err)
-		}
-
-		return
-	}
-
-	logEntries = append(
-		logEntries,
-		fmt.Sprintf(
-			"[%s] publiccode.yml found at %s\n",
-			repository.CanonicalURL.String(),
-			repository.FileRawURL,
-		),
-	)
-
-	//nolint:godox
-	// FIXME: this is hardcoded for now, because it requires changes to publiccode-parser-go.
-	domain := publiccode.Domain{
-		Host:        "github.com",
-		UseTokenFor: []string{"github.com", "api.github.com", "raw.githubusercontent.com"},
-		BasicAuth:   []string{os.Getenv("GITHUB_TOKEN")},
-	}
-
-	var parser *publiccode.Parser
-
-	parser, err = publiccode.NewParser(publiccode.ParserConfig{Domain: domain})
-	if err != nil {
-		logEntries = append(
-			logEntries,
-			fmt.Sprintf("[%s] can't create a Parser: %s\n", repository.Name, err.Error()),
-		)
-
-		return
-	}
-
-	var parsed publiccode.PublicCode
-
-	parsed, err = parser.Parse(repository.FileRawURL)
-
-	valid := true
-
-	if err != nil {
-		var validationResults publiccode.ValidationResults
-		if errors.As(err, &validationResults) {
-			var validationError publiccode.ValidationError
-			for _, res := range validationResults {
-				if errors.As(res, &validationError) {
-					valid = false
-
-					break
-				}
-			}
-		}
-	}
-
-	publisherID := viper.GetString("MAIN_PUBLISHER_ID")
-	if valid && repository.Publisher.ID != publisherID {
-		//nolint:forcetypeassert // we'd want to panic here anyway if the library returns a non v0
-		err = validateFile(repository.Publisher, parsed.(publiccode.PublicCodeV0), repository.FileRawURL)
-		if err != nil {
-			valid = false
-		}
-	}
-
-	if !valid {
-		logEntries = append(logEntries, fmt.Sprintf("[%s] BAD publiccode.yml: %+v\n", repository.Name, err))
 	} else {
-		logEntries = append(logEntries, fmt.Sprintf("[%s] GOOD publiccode.yml\n", repository.Name))
+		resp, err := httpclient.GetURL(repository.FileRawURL, repository.Headers)
+		statusCode := 0
+		if err == nil {
+			statusCode = resp.Status.Code
+		}
+
+		if statusCode == http.StatusOK && err == nil {
+			logEntries = append(
+				logEntries,
+				fmt.Sprintf(
+					"[%s] publiccode.yml found at %s\n",
+					repository.CanonicalURL.String(),
+					repository.FileRawURL,
+				),
+			)
+		} else {
+			logEntries = append(
+				logEntries,
+				fmt.Sprintf("[%s] Failed to GET publiccode.yml (status: %d)", repository.Name, statusCode),
+			)
+			log.Warnf("[%s] publiccode.yml not reachable (status: %d), continuing without it", repository.Name, statusCode)
+			repository.FileRawURL = ""
+		}
 	}
 
 	if c.DryRun {
 		log.Infof("[%s]: Skipping other steps (--dry-run)", repository.Name)
+		return
 	}
 
 	url := repository.CanonicalURL.String()
 
-	if parsed == nil {
-		logEntries = append(logEntries, fmt.Sprintf("[%s] parsing error: parsed publiccode is nil", repository.Name))
-
-		return
-	}
-
-	if err != nil {
-		logEntries = append(logEntries, fmt.Sprintf("[%s] parsing error: %s", repository.Name, err.Error()))
-
-		return
+	publiccodeURL := (*string)(nil)
+	if repository.FileRawURL != "" {
+		publiccodeURL = &repository.FileRawURL
 	}
 
 	if !c.DryRun {
@@ -374,30 +304,16 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 			repository.Name,
 			deref(repoTitle),
 			repoDesc != nil,
-			true,
+			publiccodeURL != nil,
 		)
 
-		if _, err = c.apiClient.PostRepository(
-			url,
-			repoTitle,
-			repoDesc,
-			&repository.FileRawURL,
-			orgURI(repository.Publisher),
-			repository.CreatedAt,
-			repository.UpdatedAt,
-			true,
-		); err != nil {
-			logEntries = append(logEntries, fmt.Sprintf("[%s]: %s", repository.Name, err.Error()))
-			log.Errorf("[%s] PostRepository failed: %v", repository.Name, err)
-		}
-	}
-
-	if !viper.GetBool("SKIP_VITALITY") && !c.DryRun {
 		// Clone repository.
-		err = git.CloneRepository(repository.URL.Host, repository.Name, parsed.Url().String(), c.Index)
+		err = git.CloneRepository(repository.URL.Host, repository.Name, repository.CanonicalURL.String(), c.Index)
 		if err != nil {
 			logEntries = append(logEntries, fmt.Sprintf("[%s] error while cloning: %v\n", repository.Name, err))
 		}
+
+		lastActivity := repository.UpdatedAt
 
 		// Calculate Repository activity index and vitality. Defaults to 60 days.
 		activityDays := 60
@@ -405,16 +321,39 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 			activityDays = viper.GetInt("ACTIVITY_DAYS")
 		}
 
-		activityIndex, _, err := git.CalculateRepoActivity(repository, activityDays)
-		if err != nil {
-			logEntries = append(
-				logEntries, fmt.Sprintf("[%s] error calculating activity index: %v\n", repository.Name, err),
-			)
-		} else {
-			logEntries = append(
-				logEntries,
-				fmt.Sprintf("[%s] activity index in the last %d days: %f\n", repository.Name, activityDays, activityIndex),
-			)
+		var activityIndex float64
+		if err == nil {
+			activityIndex, _, err = git.CalculateRepoActivity(repository, activityDays)
+			if err != nil {
+				logEntries = append(
+					logEntries, fmt.Sprintf("[%s] error calculating activity index: %v\n", repository.Name, err),
+				)
+			} else {
+				logEntries = append(
+					logEntries,
+					fmt.Sprintf("[%s] activity index in the last %d days: %f\n", repository.Name, activityDays, activityIndex),
+				)
+			}
+
+			if last, lastErr := git.LastCommitTime(repository); lastErr == nil {
+				lastActivity = last
+			} else {
+				logEntries = append(logEntries, fmt.Sprintf("[%s] unable to determine last activity: %v", repository.Name, lastErr))
+			}
+		}
+
+		if _, err = c.apiClient.PostRepository(
+			url,
+			repoTitle,
+			repoDesc,
+			publiccodeURL,
+			orgURI(repository.Publisher),
+			repository.CreatedAt,
+			repository.UpdatedAt,
+			lastActivity,
+		); err != nil {
+			logEntries = append(logEntries, fmt.Sprintf("[%s]: %s", repository.Name, err.Error()))
+			log.Errorf("[%s] PostRepository failed: %v", repository.Name, err)
 		}
 	}
 }
@@ -480,7 +419,7 @@ func (c *Crawler) upsertPlaceholderSoftware(
 		orgURI(repository.Publisher),
 		repository.CreatedAt,
 		repository.UpdatedAt,
-		true,
+		repository.UpdatedAt,
 	); err != nil {
 		return err
 	}
@@ -572,65 +511,4 @@ func orgURI(publisher common.Publisher) string {
 	}
 
 	return publisher.Organization.String()
-}
-
-// validateFile performs additional validations that are not strictly mandated
-// by the publiccode.yml Standard.
-// Using `one` command this check will be skipped.
-func validateFile(publisher common.Publisher, parsed publiccode.PublicCodeV0, fileRawURL string) error {
-	u, _ := url.Parse(fileRawURL)
-	repo1 := vcsurl.GetRepo(u)
-
-	repo2 := vcsurl.GetRepo((*url.URL)(parsed.Url()))
-
-	if repo1 != nil && repo2 != nil {
-		// Let's ignore the schema when checking for equality.
-		//
-		// This is mainly to match repos regardless of whether they are served
-		// through HTTPS or HTTP.
-		repo1.Scheme, repo2.Scheme = "", ""
-
-		if !strings.EqualFold(repo1.String(), repo2.String()) {
-			return fmt.Errorf(
-				"declared url (%s) and actual publiccode.yml location URL (%s) "+
-					"are not in the same repo: '%s' vs '%s'",
-				parsed.Url(), fileRawURL, repo2, repo1,
-			)
-		}
-	}
-
-	// When the publisher id is a UUID, it means that the Publisher didn't originally
-	// have an explicit AlternativeId, which in turn means that the Publisher
-	// is not an Italian Public Administration, since those are registered in
-	// the API with an alternativeId set to their iPA code (Italian PA code).
-	//
-	// When a publisher has an alternativeId, it takes precedence over the
-	// autogenerated one and it's exposed as publisher.ID.
-	//
-	// //nolint:godox
-	// TODO: This is not ideal and also an Italian-specific check
-	// (https://github.com/italia/publiccode-crawler/issues/298)
-	idIsUUID, _ := regexp.MatchString("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", publisher.ID)
-
-	var organisationURI string
-	if parsed.Organisation != nil {
-		organisationURI = parsed.Organisation.URI
-	}
-
-	if !idIsUUID && !strings.EqualFold(
-		strings.TrimSpace("urn:x-italian-pa:"+publisher.ID),
-		strings.TrimSpace(organisationURI),
-	) {
-		return fmt.Errorf(
-			"organisation is '%s', but 'urn:x-italian-pa:%s' was expected for '%s' in %s. "+
-				"Set organisation.uri to 'urn:x-italian-pa:%s'",
-			organisationURI,
-			publisher.ID,
-			publisher.Name,
-			fileRawURL,
-			publisher.ID,
-		)
-	}
-
-	return nil
 }
