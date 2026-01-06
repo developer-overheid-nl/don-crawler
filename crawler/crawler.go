@@ -216,11 +216,11 @@ func (c *Crawler) ProcessRepositories(repos chan common.Repository) {
 }
 
 // ProcessRepo looks for a publiccode.yml file in a repository, and if found it processes it.
-//
-//nolint:maintidx
 func (c *Crawler) ProcessRepo(repository common.Repository) {
-	var logEntries []string
-	var err error
+	var (
+		logEntries []string
+		err        error
+	)
 
 	defer func() {
 		for _, e := range logEntries {
@@ -249,6 +249,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 	} else {
 		resp, err := httpclient.GetURL(repository.FileRawURL, repository.Headers)
 		statusCode := 0
+
 		if err == nil {
 			statusCode = resp.Status.Code
 		}
@@ -274,6 +275,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 
 	if c.DryRun {
 		log.Infof("[%s]: Skipping other steps (--dry-run)", repository.Name)
+
 		return
 	}
 
@@ -385,56 +387,6 @@ func (c *Crawler) crawl() error {
 	c.repositoriesWg.Wait()
 
 	log.Info("Crawler run completed")
-
-	return nil
-}
-
-func (c *Crawler) upsertPlaceholderSoftware(
-	repository common.Repository, logEntries *[]string,
-) error {
-	url := repository.CanonicalURL.String()
-
-	titleValue := repository.Title
-	if titleValue == "" {
-		titleValue = repository.Name
-	}
-
-	var titlePointer *string
-	if titleValue != "" {
-		titlePointer = &titleValue
-	}
-
-	desc := ensureDescription(repository)
-	description := &desc
-
-	if c.DryRun {
-		return nil
-	}
-
-	if _, err := c.apiClient.PostRepository(
-		url,
-		titlePointer,
-		description,
-		nil,
-		orgURI(repository.Publisher),
-		repository.CreatedAt,
-		repository.UpdatedAt,
-		repository.UpdatedAt,
-	); err != nil {
-		return err
-	}
-
-	log.Warnf(
-		"[%s] placeholder software created (title=%q, hasDescription=%t)",
-		repository.Name,
-		deref(titlePointer),
-		description != nil,
-	)
-
-	*logEntries = append(
-		*logEntries,
-		fmt.Sprintf("[%s] placeholder software created", repository.Name),
-	)
 
 	return nil
 }

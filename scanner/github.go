@@ -99,25 +99,28 @@ func (scanner GitHubScanner) ScanGroupOfRepos(
 			)
 		}
 
-	// Add repositories to the channel that will perform the check on everyone.
-	for _, r := range repos {
-		if isDotGitHubRepoName(r.GetName()) {
-			repoRef := r.GetHTMLURL()
-			if repoRef == "" {
-				repoRef = r.GetFullName()
-			}
-			if repoRef == "" {
-				repoRef = ".github"
-			}
-			log.Debugf("Skipping GitHub .github repository: %s", repoRef)
-			continue
-		}
+		// Add repositories to the channel that will perform the check on everyone.
+		for _, r := range repos {
+			if isDotGitHubRepoName(r.GetName()) {
+				repoRef := r.GetHTMLURL()
+				if repoRef == "" {
+					repoRef = r.GetFullName()
+				}
 
-		repoURL, err := url.Parse(*r.HTMLURL)
-		if err != nil {
-			log.Errorf("can't parse URL %s: %s", *r.URL, err.Error())
+				if repoRef == "" {
+					repoRef = ".github"
+				}
 
-			continue
+				log.Debugf("Skipping GitHub .github repository: %s", repoRef)
+
+				continue
+			}
+
+			repoURL, err := url.Parse(*r.HTMLURL)
+			if err != nil {
+				log.Errorf("can't parse URL %s: %s", *r.URL, err.Error())
+
+				continue
 			}
 
 			if err = scanner.ScanRepo(*repoURL, publisher, repositories); err != nil {
@@ -155,10 +158,10 @@ func (scanner GitHubScanner) ScanRepo(
 		return fmt.Errorf("doesn't look like a GitHub repo %s", url.String())
 	}
 
-	orgName := splitted[0]
-	repoName := splitted[1]
+	orgName, repoName := splitted[0], splitted[1]
 	if isDotGitHubRepoName(repoName) {
 		log.Debugf("Skipping GitHub .github repository: %s", url.String())
+
 		return nil
 	}
 
@@ -258,5 +261,6 @@ func secondaryRateLimit(err *github.AbuseRateLimitError) {
 
 func isDotGitHubRepoName(repoName string) bool {
 	repoNameNormalized := strings.TrimSuffix(repoName, ".git")
+
 	return strings.EqualFold(repoNameNormalized, ".github")
 }
