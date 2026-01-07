@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/alranel/go-vcsurl/v2"
 	httpclient "github.com/italia/httpclient-lib-go"
@@ -349,11 +350,11 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 			repoTitle,
 			repoDesc,
 			publiccodeURL,
-			orgURI(repository.Publisher),
-			repository.CreatedAt,
-			repository.UpdatedAt,
-			lastActivity,
-		); err != nil {
+				orgURI(repository.Publisher),
+				repository.CreatedAt,
+				repository.UpdatedAt.Truncate(time.Second),
+				lastActivity,
+			); err != nil {
 			logEntries = append(logEntries, fmt.Sprintf("[%s]: %s", repository.Name, err.Error()))
 			log.Errorf("[%s] PostRepository failed: %v", repository.Name, err)
 		}
