@@ -16,7 +16,9 @@ type BitBucketScanner struct {
 }
 
 func NewBitBucketScanner() Scanner {
-	return BitBucketScanner{client: bitbucket.NewBasicAuth("", "")}
+	client, _ := bitbucket.NewBasicAuth("", "")
+
+	return BitBucketScanner{client: client}
 }
 
 func bitbucketTime(t *time.Time) time.Time {
