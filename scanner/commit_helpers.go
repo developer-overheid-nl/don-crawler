@@ -69,7 +69,8 @@ func lastCommitTimeWithRetry(provider string, fetch func() (time.Time, error)) (
 			waitProvider = rateLimitErr.Provider
 		}
 
-		log.Infof("%s commit API rate limited; waiting until %s", strings.ToLower(waitProvider), rateLimitErr.Reset.Format(time.RFC3339))
+		log.Infof("%s commit API rate limited; waiting until %s", strings.ToLower(waitProvider),
+			rateLimitErr.Reset.Format(time.RFC3339))
 		time.Sleep(wait)
 	}
 }

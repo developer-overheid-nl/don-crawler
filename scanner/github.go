@@ -36,11 +36,14 @@ func NewGitHubScanner() Scanner {
 	token := os.Getenv("GITHUB_TOKEN")
 
 	var httpClient *http.Client
+
 	if token == "" {
 		log.Infof("GitHub API auth: GITHUB_TOKEN not set; using unauthenticated client")
+
 		httpClient = http.DefaultClient
 	} else {
 		log.Infof("GitHub API auth: GITHUB_TOKEN set; using authenticated client")
+
 		ts := oauth2.StaticTokenSource(
 			&oauth2.Token{AccessToken: token},
 		)
@@ -118,6 +121,7 @@ func (scanner GitHubScanner) ScanGroupOfRepos(
 				if repoRef == "" {
 					repoRef = ".github"
 				}
+
 				log.Debugf("Skipping GitHub .github repository: %s", repoRef)
 
 				continue

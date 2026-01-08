@@ -180,12 +180,14 @@ func newGitlabClient(u url.URL) (*gitlab.Client, error) {
 func gitlabRateLimitReset(resp *gitlab.Response, err error) (time.Time, bool) {
 	if resp != nil && resp.StatusCode == http.StatusTooManyRequests {
 		reset, ok := rateLimitResetFromHeaders(resp.Header)
+
 		return reset, ok
 	}
 
 	var errResp *gitlab.ErrorResponse
 	if errors.As(err, &errResp) && errResp.HasStatusCode(http.StatusTooManyRequests) {
 		reset, ok := rateLimitResetFromHeaders(errResp.Response.Header)
+
 		return reset, ok
 	}
 

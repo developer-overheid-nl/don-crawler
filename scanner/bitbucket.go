@@ -159,6 +159,6 @@ func (scanner BitBucketScanner) ScanRepo(
 
 // LastCommitTimeFromAPI returns the last commit time for a Bitbucket repository.
 func (scanner BitBucketScanner) LastCommitTimeFromAPI(_ url.URL) (time.Time, error) {
-	// TODO: implement Bitbucket last commit lookup when we have Bitbucket repos.
+	// implement Bitbucket last commit lookup when we have Bitbucket repos.
 	return time.Time{}, errors.New("bitbucket last commit lookup not implemented")
 }

@@ -317,7 +317,9 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		)
 
 		var apiLastActivity time.Time
+
 		var apiErr error
+
 		switch {
 		case vcsurl.IsGitHub(&repository.CanonicalURL):
 			apiLastActivity, apiErr = c.gitHubScanner.LastCommitTimeFromAPI(repository.CanonicalURL)
@@ -328,6 +330,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		default:
 			apiErr = fmt.Errorf("unsupported repository host %s", repository.CanonicalURL.Host)
 		}
+
 		if apiErr == nil && !apiLastActivity.IsZero() {
 			lastActivity = apiLastActivity
 			lastActivityFromAPI = true
@@ -346,6 +349,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		}
 
 		var activityIndex float64
+
 		activityIndex, _, err = git.CalculateRepoActivity(repository, activityDays)
 		if err != nil {
 			logEntries = append(
@@ -392,10 +396,12 @@ func (c *Crawler) crawl() error {
 
 	// Get cpus number
 	numCPUs := runtime.NumCPU()
+
 	workerCount := int(math.Ceil(float64(numCPUs) * 0.7))
 	if workerCount < 1 {
 		workerCount = 1
 	}
+
 	log.Debugf("CPUs #: %d (workers: %d)", numCPUs, workerCount)
 
 	// Process the repositories in order to retrieve the files.
