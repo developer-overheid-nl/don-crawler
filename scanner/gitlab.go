@@ -1,7 +1,9 @@
 package scanner
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -90,6 +92,52 @@ func (scanner GitLabScanner) ScanRepo(
 	return addProject(&url, *prj, publisher, repositories)
 }
 
+// LastCommitTimeFromAPI returns the last commit time for a GitLab repository.
+func (scanner GitLabScanner) LastCommitTimeFromAPI(repoURL url.URL) (time.Time, error) {
+	return lastCommitTimeWithRetry("gitlab", func() (time.Time, error) {
+		return lastCommitTimeGitLab(repoURL)
+	})
+}
+
+func lastCommitTimeGitLab(repoURL url.URL) (time.Time, error) {
+	projectPath := strings.TrimSuffix(strings.Trim(repoURL.Path, "/"), ".git")
+	if projectPath == "" {
+		return time.Time{}, fmt.Errorf("gitlab repo path is empty for %s", repoURL.String())
+	}
+
+	client, err := newGitlabClient(repoURL)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	opts := &gitlab.ListCommitsOptions{
+		ListOptions: gitlab.ListOptions{Page: 1, PerPage: 1},
+	}
+
+	commits, resp, err := client.Commits.ListCommits(projectPath, opts)
+	if err != nil {
+		if reset, ok := gitlabRateLimitReset(resp, err); ok {
+			return time.Time{}, RateLimitError{Provider: "gitlab", Reset: reset}
+		}
+
+		return time.Time{}, err
+	}
+
+	if len(commits) == 0 {
+		return time.Time{}, errors.New("no commits found")
+	}
+
+	if commits[0].CommittedDate != nil {
+		return *commits[0].CommittedDate, nil
+	}
+
+	if commits[0].CreatedAt != nil {
+		return *commits[0].CreatedAt, nil
+	}
+
+	return time.Time{}, errors.New("commit date missing")
+}
+
 // isGitlabGroup returns true if the API URL points to a group.
 func isGitlabGroup(u url.URL) bool {
 	return (
@@ -127,6 +175,21 @@ func newGitlabClient(u url.URL) (*gitlab.Client, error) {
 	base := fmt.Sprintf("%s://%s/api/v4", u.Scheme, u.Host)
 
 	return gitlab.NewClient(token, gitlab.WithBaseURL(base))
+}
+
+func gitlabRateLimitReset(resp *gitlab.Response, err error) (time.Time, bool) {
+	if resp != nil && resp.StatusCode == http.StatusTooManyRequests {
+		reset, ok := rateLimitResetFromHeaders(resp.Header)
+		return reset, ok
+	}
+
+	var errResp *gitlab.ErrorResponse
+	if errors.As(err, &errResp) && errResp.HasStatusCode(http.StatusTooManyRequests) {
+		reset, ok := rateLimitResetFromHeaders(errResp.Response.Header)
+		return reset, ok
+	}
+
+	return time.Time{}, false
 }
 
 // generateGitlabRawURL returns the file Gitlab specific file raw url.

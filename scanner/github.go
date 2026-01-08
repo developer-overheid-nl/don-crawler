@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/go-github/v43/github"
@@ -22,6 +23,11 @@ type GitHubScanner struct {
 	ctx    context.Context
 }
 
+var githubCommitRateLimit = struct {
+	mu    sync.Mutex
+	reset time.Time
+}{}
+
 // NewGitHubScanner returns a new GitHubScanner using the
 // authentication token from the GITHUB_TOKEN environment variable or,
 // if not set, the tokens in domains.yml.
@@ -31,8 +37,10 @@ func NewGitHubScanner() Scanner {
 
 	var httpClient *http.Client
 	if token == "" {
+		log.Infof("GitHub API auth: GITHUB_TOKEN not set; using unauthenticated client")
 		httpClient = http.DefaultClient
 	} else {
+		log.Infof("GitHub API auth: GITHUB_TOKEN set; using authenticated client")
 		ts := oauth2.StaticTokenSource(
 			&oauth2.Token{AccessToken: token},
 		)
@@ -110,7 +118,6 @@ func (scanner GitHubScanner) ScanGroupOfRepos(
 				if repoRef == "" {
 					repoRef = ".github"
 				}
-
 				log.Debugf("Skipping GitHub .github repository: %s", repoRef)
 
 				continue
@@ -247,6 +254,64 @@ Retry:
 	return nil
 }
 
+// LastCommitTimeFromAPI returns the last commit time for a GitHub repository.
+func (scanner GitHubScanner) LastCommitTimeFromAPI(repoURL url.URL) (time.Time, error) {
+	return lastCommitTimeWithRetry("github", func() (time.Time, error) {
+		return scanner.lastCommitTimeFromAPI(repoURL)
+	})
+}
+
+func (scanner GitHubScanner) lastCommitTimeFromAPI(repoURL url.URL) (time.Time, error) {
+	owner, repo, err := splitRepoOwnerAndName(repoURL)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	if reset := githubCommitRateLimitReset(); !reset.IsZero() {
+		return time.Time{}, RateLimitError{Provider: "github", Reset: reset}
+	}
+
+	opts := &github.CommitsListOptions{
+		ListOptions: github.ListOptions{PerPage: 1},
+	}
+
+	commits, _, err := scanner.client.Repositories.ListCommits(scanner.ctx, owner, repo, opts)
+	if err != nil {
+		var rateLimitError *github.RateLimitError
+		if errors.As(err, &rateLimitError) {
+			reset := rateLimitError.Rate.Reset.Time
+			setGitHubCommitRateLimit(reset)
+
+			return time.Time{}, RateLimitError{Provider: "github", Reset: reset}
+		}
+
+		var abuseRateLimitError *github.AbuseRateLimitError
+		if errors.As(err, &abuseRateLimitError) {
+			reset := time.Now().Add(githubAbuseRetryAfter(abuseRateLimitError))
+			setGitHubCommitRateLimit(reset)
+
+			return time.Time{}, RateLimitError{Provider: "github", Reset: reset}
+		}
+
+		return time.Time{}, err
+	}
+
+	if len(commits) == 0 || commits[0].Commit == nil {
+		return time.Time{}, errors.New("no commits found")
+	}
+
+	commit := commits[0].Commit
+	if commit.Committer != nil && commit.Committer.Date != nil {
+		return *commit.Committer.Date, nil
+	}
+
+	if commit.Author != nil && commit.Author.Date != nil {
+		return *commit.Author.Date, nil
+	}
+
+	return time.Time{}, errors.New("commit date missing")
+}
+
 func secondaryRateLimit(err *github.AbuseRateLimitError) {
 	var duration time.Duration
 	if err.RetryAfter != nil {
@@ -257,6 +322,44 @@ func secondaryRateLimit(err *github.AbuseRateLimitError) {
 
 	log.Infof("GitHub secondary rate limit hit, for %s", duration)
 	time.Sleep(duration)
+}
+
+func githubCommitRateLimitReset() time.Time {
+	githubCommitRateLimit.mu.Lock()
+	defer githubCommitRateLimit.mu.Unlock()
+
+	if githubCommitRateLimit.reset.IsZero() {
+		return time.Time{}
+	}
+
+	if !time.Now().Before(githubCommitRateLimit.reset) {
+		githubCommitRateLimit.reset = time.Time{}
+
+		return time.Time{}
+	}
+
+	return githubCommitRateLimit.reset
+}
+
+func setGitHubCommitRateLimit(reset time.Time) {
+	if reset.IsZero() {
+		return
+	}
+
+	githubCommitRateLimit.mu.Lock()
+	defer githubCommitRateLimit.mu.Unlock()
+
+	if reset.After(githubCommitRateLimit.reset) {
+		githubCommitRateLimit.reset = reset
+	}
+}
+
+func githubAbuseRetryAfter(err *github.AbuseRateLimitError) time.Duration {
+	if err == nil || err.RetryAfter == nil {
+		return 30 * time.Second
+	}
+
+	return *err.RetryAfter
 }
 
 func isDotGitHubRepoName(repoName string) bool {

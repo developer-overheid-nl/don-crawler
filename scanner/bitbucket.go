@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -154,4 +155,10 @@ func (scanner BitBucketScanner) ScanRepo(
 	}
 
 	return nil
+}
+
+// LastCommitTimeFromAPI returns the last commit time for a Bitbucket repository.
+func (scanner BitBucketScanner) LastCommitTimeFromAPI(_ url.URL) (time.Time, error) {
+	// TODO: implement Bitbucket last commit lookup when we have Bitbucket repos.
+	return time.Time{}, errors.New("bitbucket last commit lookup not implemented")
 }

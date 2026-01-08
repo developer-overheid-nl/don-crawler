@@ -3,6 +3,7 @@ package crawler
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -310,14 +311,34 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 			publiccodeURL != nil,
 		)
 
-		// Clone repository.
-		err = git.CloneRepository(repository.URL.Host, repository.Name, repository.CanonicalURL.String(), c.Index)
-		if err != nil {
-			logEntries = append(logEntries, fmt.Sprintf("[%s] error while cloning: %v\n", repository.Name, err))
+		var (
+			lastActivity        = repository.UpdatedAt
+			lastActivityFromAPI bool
+		)
+
+		var apiLastActivity time.Time
+		var apiErr error
+		switch {
+		case vcsurl.IsGitHub(&repository.CanonicalURL):
+			apiLastActivity, apiErr = c.gitHubScanner.LastCommitTimeFromAPI(repository.CanonicalURL)
+		case vcsurl.IsBitBucket(&repository.CanonicalURL):
+			apiLastActivity, apiErr = c.bitBucketScanner.LastCommitTimeFromAPI(repository.CanonicalURL)
+		case vcsurl.IsGitLab(&repository.CanonicalURL):
+			apiLastActivity, apiErr = c.gitLabScanner.LastCommitTimeFromAPI(repository.CanonicalURL)
+		default:
+			apiErr = fmt.Errorf("unsupported repository host %s", repository.CanonicalURL.Host)
 		}
-
-		lastActivity := repository.UpdatedAt
-
+		if apiErr == nil && !apiLastActivity.IsZero() {
+			lastActivity = apiLastActivity
+			lastActivityFromAPI = true
+		} else if apiErr != nil {
+			var rateLimitErr scanner.RateLimitError
+			if errors.As(apiErr, &rateLimitErr) {
+				log.Infof("[%s] %s", repository.Name, rateLimitErr.Error())
+			} else {
+				log.Debugf("[%s] last commit via API failed: %v", repository.Name, apiErr)
+			}
+		}
 		// Calculate Repository activity index and vitality. Defaults to 60 days.
 		activityDays := 60
 		if viper.IsSet("ACTIVITY_DAYS") {
@@ -325,23 +346,26 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		}
 
 		var activityIndex float64
-		if err == nil {
-			activityIndex, _, err = git.CalculateRepoActivity(repository, activityDays)
-			if err != nil {
-				logEntries = append(
-					logEntries, fmt.Sprintf("[%s] error calculating activity index: %v\n", repository.Name, err),
-				)
-			} else {
-				logEntries = append(
-					logEntries,
-					fmt.Sprintf("[%s] activity index in the last %d days: %f\n", repository.Name, activityDays, activityIndex),
-				)
-			}
+		activityIndex, _, err = git.CalculateRepoActivity(repository, activityDays)
+		if err != nil {
+			logEntries = append(
+				logEntries, fmt.Sprintf("[%s] error calculating activity index: %v\n", repository.Name, err),
+			)
+		} else {
+			logEntries = append(
+				logEntries,
+				fmt.Sprintf("[%s] activity index in the last %d days: %f\n", repository.Name, activityDays, activityIndex),
+			)
+		}
 
+		if !lastActivityFromAPI {
 			if last, lastErr := git.LastCommitTime(repository); lastErr == nil {
 				lastActivity = last
 			} else {
-				logEntries = append(logEntries, fmt.Sprintf("[%s] unable to determine last activity: %v", repository.Name, lastErr))
+				logEntries = append(
+					logEntries,
+					fmt.Sprintf("[%s] unable to determine last activity: %v", repository.Name, lastErr),
+				)
 			}
 		}
 
@@ -352,7 +376,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 			publiccodeURL,
 			orgURI(repository.Publisher),
 			repository.CreatedAt,
-			repository.UpdatedAt.Truncate(time.Second),
+			time.Now(),
 			lastActivity,
 		); err != nil {
 			logEntries = append(logEntries, fmt.Sprintf("[%s]: %s", repository.Name, err.Error()))
@@ -368,10 +392,14 @@ func (c *Crawler) crawl() error {
 
 	// Get cpus number
 	numCPUs := runtime.NumCPU()
-	log.Debugf("CPUs #: %d", numCPUs)
+	workerCount := int(math.Ceil(float64(numCPUs) * 0.7))
+	if workerCount < 1 {
+		workerCount = 1
+	}
+	log.Debugf("CPUs #: %d (workers: %d)", numCPUs, workerCount)
 
 	// Process the repositories in order to retrieve the files.
-	for i := range numCPUs {
+	for i := range workerCount {
 		c.repositoriesWg.Add(1)
 
 		go func(id int) {
