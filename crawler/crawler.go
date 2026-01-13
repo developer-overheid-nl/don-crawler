@@ -19,6 +19,7 @@ import (
 	"github.com/italia/publiccode-crawler/v4/common"
 	"github.com/italia/publiccode-crawler/v4/git"
 	"github.com/italia/publiccode-crawler/v4/scanner"
+	"github.com/italia/publiccode-parser-go/v5"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -275,6 +276,28 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		}
 	}
 
+	domain := publiccode.Domain{
+		Host:        "github.com",
+		UseTokenFor: []string{"github.com", "api.github.com", "raw.githubusercontent.com"},
+		BasicAuth:   []string{os.Getenv("GITHUB_TOKEN")},
+	}
+
+	var parser *publiccode.Parser
+
+	parser, err = publiccode.NewParser(publiccode.ParserConfig{Domain: domain})
+	if err != nil {
+		logEntries = append(
+			logEntries,
+			fmt.Sprintf("[%s] can't create a Parser: %s\n", repository.Name, err.Error()),
+		)
+
+		return
+	}
+
+	var parsed publiccode.PublicCode
+
+	parsed, err = parser.Parse(repository.FileRawURL)
+
 	if c.DryRun {
 		log.Infof("[%s]: Skipping other steps (--dry-run)", repository.Name)
 
@@ -342,7 +365,13 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 				log.Debugf("[%s] last commit via API failed: %v", repository.Name, apiErr)
 			}
 		}
+
 		// Calculate Repository activity index and vitality. Defaults to 60 days.
+		err = git.CloneRepository(repository.URL.Host, repository.Name, parsed.Url().String(), c.Index)
+		if err != nil {
+			logEntries = append(logEntries, fmt.Sprintf("[%s] error while cloning: %v\n", repository.Name, err))
+		}
+
 		activityDays := 60
 		if viper.IsSet("ACTIVITY_DAYS") {
 			activityDays = viper.GetInt("ACTIVITY_DAYS")
