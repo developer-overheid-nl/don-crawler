@@ -55,15 +55,18 @@ type repoLockMap struct {
 
 func (r *repoLockMap) lock(key string) func() {
 	r.mu.Lock()
+
 	if r.locks == nil {
 		r.locks = make(map[string]*sync.Mutex)
 	}
+
 	lock := r.locks[key]
 
 	if lock == nil {
 		lock = &sync.Mutex{}
 		r.locks[key] = lock
 	}
+
 	r.mu.Unlock()
 
 	lock.Lock()
@@ -447,7 +450,9 @@ func (c *Crawler) cloneAndLogActivity(
 	unlock := c.repoLocks.lock(repoLockKey(repository))
 
 	err = git.CloneRepository(repository.URL.Host, repository.Name, cloneURL, c.Index)
+
 	unlock()
+
 	if err != nil {
 		*logEntries = append(*logEntries, fmt.Sprintf("[%s] error while cloning: %v\n", repository.Name, err))
 	}
