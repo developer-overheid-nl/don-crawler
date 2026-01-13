@@ -46,6 +46,7 @@ func main() {
 		log.SetOutput(io.MultiWriter(os.Stdout, f))
 		log.Infof("Logging to %s", logPath)
 	}
+
 	log.Infof("DATADIR=%s", viper.GetString("DATADIR"))
 
 	cmd.Execute()
