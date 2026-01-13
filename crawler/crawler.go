@@ -231,72 +231,12 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		}
 	}()
 
-	if repository.FileRawURL == "" {
-		logEntries = append(logEntries, fmt.Sprintf("[%s] publiccode.yml not found", repository.Name))
-		log.Warnf("[%s] publiccode.yml missing, will proceed without it", repository.Name)
+	c.ensurePubliccodeFile(&repository, &logEntries)
 
-		if repository.Title == "" || repository.Description == "" {
-			title, desc, metaErr := c.fetchRepoMetadata(repository)
-			if metaErr != nil {
-				logEntries = append(logEntries, fmt.Sprintf("[%s] failed to fetch repo metadata: %v", repository.Name, metaErr))
-			} else {
-				if repository.Title == "" && title != "" {
-					repository.Title = title
-				}
-
-				if repository.Description == "" && desc != "" {
-					repository.Description = desc
-				}
-			}
-		}
-	} else {
-		resp, err := httpclient.GetURL(repository.FileRawURL, repository.Headers)
-		statusCode := 0
-
-		if err == nil {
-			statusCode = resp.Status.Code
-		}
-
-		if statusCode == http.StatusOK && err == nil {
-			logEntries = append(
-				logEntries,
-				fmt.Sprintf(
-					"[%s] publiccode.yml found at %s\n",
-					repository.CanonicalURL.String(),
-					repository.FileRawURL,
-				),
-			)
-		} else {
-			logEntries = append(
-				logEntries,
-				fmt.Sprintf("[%s] Failed to GET publiccode.yml (status: %d)", repository.Name, statusCode),
-			)
-			log.Warnf("[%s] publiccode.yml not reachable (status: %d), continuing without it", repository.Name, statusCode)
-			repository.FileRawURL = ""
-		}
-	}
-
-	domain := publiccode.Domain{
-		Host:        "github.com",
-		UseTokenFor: []string{"github.com", "api.github.com", "raw.githubusercontent.com"},
-		BasicAuth:   []string{os.Getenv("GITHUB_TOKEN")},
-	}
-
-	var parser *publiccode.Parser
-
-	parser, err = publiccode.NewParser(publiccode.ParserConfig{Domain: domain})
+	parser, err := c.newPubliccodeParser(repository.Name, &logEntries)
 	if err != nil {
-		logEntries = append(
-			logEntries,
-			fmt.Sprintf("[%s] can't create a Parser: %s\n", repository.Name, err.Error()),
-		)
-
 		return
 	}
-
-	var parsed publiccode.PublicCode
-
-	parsed, err = parser.Parse(repository.FileRawURL)
 
 	if c.DryRun {
 		log.Infof("[%s]: Skipping other steps (--dry-run)", repository.Name)
@@ -304,118 +244,244 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		return
 	}
 
-	url := repository.CanonicalURL.String()
+	publiccodeURL := repositoryPubliccodeURL(repository)
+	repoTitle, repoDesc := repoPostDetails(repository)
 
-	publiccodeURL := (*string)(nil)
-	if repository.FileRawURL != "" {
-		publiccodeURL = &repository.FileRawURL
+	log.Debugf(
+		"[%s] posting repository (title=%q desc=%t publiccode=%t)",
+		repository.Name,
+		deref(repoTitle),
+		repoDesc != nil,
+		publiccodeURL != nil,
+	)
+
+	lastActivity, lastActivityFromAPI := c.lastActivityFromAPI(repository)
+
+	c.cloneAndLogActivity(repository, parser, &logEntries)
+
+	lastActivity = c.lastActivityFromGit(repository, lastActivity, lastActivityFromAPI, &logEntries)
+
+	if _, err = c.apiClient.PostRepository(
+		repository.CanonicalURL.String(),
+		repoTitle,
+		repoDesc,
+		publiccodeURL,
+		orgURI(repository.Publisher),
+		repository.CreatedAt,
+		time.Now(),
+		lastActivity,
+	); err != nil {
+		logEntries = append(logEntries, fmt.Sprintf("[%s]: %s", repository.Name, err.Error()))
+		log.Errorf("[%s] PostRepository failed: %v", repository.Name, err)
+	}
+}
+
+func (c *Crawler) ensurePubliccodeFile(repository *common.Repository, logEntries *[]string) {
+	if repository.FileRawURL == "" {
+		*logEntries = append(*logEntries, fmt.Sprintf("[%s] publiccode.yml not found", repository.Name))
+		log.Warnf("[%s] publiccode.yml missing, will proceed without it", repository.Name)
+		c.fillMissingMetadata(repository, logEntries)
+
+		return
 	}
 
-	if !c.DryRun {
-		title := repository.Title
-		if title == "" {
-			title = repository.Name
-		}
+	resp, err := httpclient.GetURL(repository.FileRawURL, repository.Headers)
+	statusCode := 0
 
-		desc := ensureDescription(repository)
+	if err == nil {
+		statusCode = resp.Status.Code
+	}
 
-		repoTitle := &title
-		if title == "" {
-			repoTitle = nil
-		}
-
-		repoDesc := &desc
-
-		log.Debugf(
-			"[%s] posting repository (title=%q desc=%t publiccode=%t)",
-			repository.Name,
-			deref(repoTitle),
-			repoDesc != nil,
-			publiccodeURL != nil,
+	if statusCode == http.StatusOK && err == nil {
+		*logEntries = append(
+			*logEntries,
+			fmt.Sprintf(
+				"[%s] publiccode.yml found at %s\n",
+				repository.CanonicalURL.String(),
+				repository.FileRawURL,
+			),
 		)
 
-		var (
-			lastActivity        = repository.UpdatedAt
-			lastActivityFromAPI bool
+		return
+	}
+
+	*logEntries = append(
+		*logEntries,
+		fmt.Sprintf("[%s] Failed to GET publiccode.yml (status: %d)", repository.Name, statusCode),
+	)
+	log.Warnf("[%s] publiccode.yml not reachable (status: %d), continuing without it", repository.Name, statusCode)
+	repository.FileRawURL = ""
+}
+
+func (c *Crawler) fillMissingMetadata(repository *common.Repository, logEntries *[]string) {
+	if repository.Title != "" && repository.Description != "" {
+		return
+	}
+
+	title, desc, metaErr := c.fetchRepoMetadata(*repository)
+	if metaErr != nil {
+		*logEntries = append(
+			*logEntries,
+			fmt.Sprintf("[%s] failed to fetch repo metadata: %v", repository.Name, metaErr),
 		)
 
-		var apiLastActivity time.Time
+		return
+	}
 
-		var apiErr error
+	if repository.Title == "" && title != "" {
+		repository.Title = title
+	}
 
-		switch {
-		case vcsurl.IsGitHub(&repository.CanonicalURL):
-			apiLastActivity, apiErr = c.gitHubScanner.LastCommitTimeFromAPI(repository.CanonicalURL)
-		case vcsurl.IsBitBucket(&repository.CanonicalURL):
-			apiLastActivity, apiErr = c.bitBucketScanner.LastCommitTimeFromAPI(repository.CanonicalURL)
-		case vcsurl.IsGitLab(&repository.CanonicalURL):
-			apiLastActivity, apiErr = c.gitLabScanner.LastCommitTimeFromAPI(repository.CanonicalURL)
-		default:
-			apiErr = fmt.Errorf("unsupported repository host %s", repository.CanonicalURL.Host)
-		}
+	if repository.Description == "" && desc != "" {
+		repository.Description = desc
+	}
+}
 
-		if apiErr == nil && !apiLastActivity.IsZero() {
-			lastActivity = apiLastActivity
-			lastActivityFromAPI = true
-		} else if apiErr != nil {
-			var rateLimitErr scanner.RateLimitError
-			if errors.As(apiErr, &rateLimitErr) {
-				log.Infof("[%s] %s", repository.Name, rateLimitErr.Error())
-			} else {
-				log.Debugf("[%s] last commit via API failed: %v", repository.Name, apiErr)
-			}
-		}
+func (c *Crawler) newPubliccodeParser(repoName string, logEntries *[]string) (*publiccode.Parser, error) {
+	domain := publiccode.Domain{
+		Host:        "github.com",
+		UseTokenFor: []string{"github.com", "api.github.com", "raw.githubusercontent.com"},
+		BasicAuth:   []string{os.Getenv("GITHUB_TOKEN")},
+	}
 
-		// Calculate Repository activity index and vitality. Defaults to 60 days.
-		err = git.CloneRepository(repository.URL.Host, repository.Name, parsed.Url().String(), c.Index)
-		if err != nil {
-			logEntries = append(logEntries, fmt.Sprintf("[%s] error while cloning: %v\n", repository.Name, err))
-		}
+	parser, err := publiccode.NewParser(publiccode.ParserConfig{Domain: domain})
+	if err != nil {
+		*logEntries = append(
+			*logEntries,
+			fmt.Sprintf("[%s] can't create a Parser: %s\n", repoName, err.Error()),
+		)
 
-		activityDays := 60
-		if viper.IsSet("ACTIVITY_DAYS") {
-			activityDays = viper.GetInt("ACTIVITY_DAYS")
-		}
+		return nil, err
+	}
 
-		var activityIndex float64
+	return parser, nil
+}
 
-		activityIndex, _, err = git.CalculateRepoActivity(repository, activityDays)
-		if err != nil {
-			logEntries = append(
-				logEntries, fmt.Sprintf("[%s] error calculating activity index: %v\n", repository.Name, err),
-			)
+func (c *Crawler) lastActivityFromAPI(repository common.Repository) (time.Time, bool) {
+	lastActivity := repository.UpdatedAt
+
+	var apiLastActivity time.Time
+
+	var apiErr error
+
+	switch {
+	case vcsurl.IsGitHub(&repository.CanonicalURL):
+		apiLastActivity, apiErr = c.gitHubScanner.LastCommitTimeFromAPI(repository.CanonicalURL)
+	case vcsurl.IsBitBucket(&repository.CanonicalURL):
+		apiLastActivity, apiErr = c.bitBucketScanner.LastCommitTimeFromAPI(repository.CanonicalURL)
+	case vcsurl.IsGitLab(&repository.CanonicalURL):
+		apiLastActivity, apiErr = c.gitLabScanner.LastCommitTimeFromAPI(repository.CanonicalURL)
+	default:
+		apiErr = fmt.Errorf("unsupported repository host %s", repository.CanonicalURL.Host)
+	}
+
+	if apiErr == nil && !apiLastActivity.IsZero() {
+		return apiLastActivity, true
+	}
+
+	if apiErr != nil {
+		var rateLimitErr scanner.RateLimitError
+		if errors.As(apiErr, &rateLimitErr) {
+			log.Infof("[%s] %s", repository.Name, rateLimitErr.Error())
 		} else {
-			logEntries = append(
-				logEntries,
-				fmt.Sprintf("[%s] activity index in the last %d days: %f\n", repository.Name, activityDays, activityIndex),
-			)
-		}
-
-		if !lastActivityFromAPI {
-			if last, lastErr := git.LastCommitTime(repository); lastErr == nil {
-				lastActivity = last
-			} else {
-				logEntries = append(
-					logEntries,
-					fmt.Sprintf("[%s] unable to determine last activity: %v", repository.Name, lastErr),
-				)
-			}
-		}
-
-		if _, err = c.apiClient.PostRepository(
-			url,
-			repoTitle,
-			repoDesc,
-			publiccodeURL,
-			orgURI(repository.Publisher),
-			repository.CreatedAt,
-			time.Now(),
-			lastActivity,
-		); err != nil {
-			logEntries = append(logEntries, fmt.Sprintf("[%s]: %s", repository.Name, err.Error()))
-			log.Errorf("[%s] PostRepository failed: %v", repository.Name, err)
+			log.Debugf("[%s] last commit via API failed: %v", repository.Name, apiErr)
 		}
 	}
+
+	return lastActivity, false
+}
+
+func (c *Crawler) cloneAndLogActivity(
+	repository common.Repository,
+	parser *publiccode.Parser,
+	logEntries *[]string,
+) {
+	// Calculate Repository activity index and vitality. Defaults to 60 days.
+	var parsed publiccode.PublicCode
+
+	var err error
+
+	parsed, err = parser.Parse(repository.FileRawURL)
+	if err != nil {
+		*logEntries = append(*logEntries, fmt.Sprintf("[%s] error while parsing: %v\n", repository.FileRawURL, err))
+	}
+
+	err = git.CloneRepository(repository.URL.Host, repository.Name, parsed.Url().String(), c.Index)
+	if err != nil {
+		*logEntries = append(*logEntries, fmt.Sprintf("[%s] error while cloning: %v\n", repository.Name, err))
+	}
+
+	activityDays := activityDays()
+
+	activityIndex, _, err := git.CalculateRepoActivity(repository, activityDays)
+	if err != nil {
+		*logEntries = append(
+			*logEntries,
+			fmt.Sprintf("[%s] error calculating activity index: %v\n", repository.Name, err),
+		)
+	} else {
+		*logEntries = append(
+			*logEntries,
+			fmt.Sprintf("[%s] activity index in the last %d days: %f\n", repository.Name, activityDays, activityIndex),
+		)
+	}
+}
+
+func (c *Crawler) lastActivityFromGit(
+	repository common.Repository,
+	lastActivity time.Time,
+	fromAPI bool,
+	logEntries *[]string,
+) time.Time {
+	if fromAPI {
+		return lastActivity
+	}
+
+	last, lastErr := git.LastCommitTime(repository)
+	if lastErr == nil {
+		return last
+	}
+
+	*logEntries = append(
+		*logEntries,
+		fmt.Sprintf("[%s] unable to determine last activity: %v", repository.Name, lastErr),
+	)
+
+	return lastActivity
+}
+
+func repositoryPubliccodeURL(repository common.Repository) *string {
+	if repository.FileRawURL == "" {
+		return nil
+	}
+
+	return &repository.FileRawURL
+}
+
+func repoPostDetails(repository common.Repository) (*string, *string) {
+	title := repository.Title
+	if title == "" {
+		title = repository.Name
+	}
+
+	desc := ensureDescription(repository)
+
+	repoTitle := &title
+	if title == "" {
+		repoTitle = nil
+	}
+
+	repoDesc := &desc
+
+	return repoTitle, repoDesc
+}
+
+func activityDays() int {
+	if viper.IsSet("ACTIVITY_DAYS") {
+		return viper.GetInt("ACTIVITY_DAYS")
+	}
+
+	return 60
 }
 
 func (c *Crawler) crawl() error {
