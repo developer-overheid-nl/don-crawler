@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/italia/publiccode-crawler/v4/cmd"
 	"github.com/joho/godotenv"
@@ -26,12 +28,7 @@ func main() {
 	viper.AutomaticEnv()
 
 	viper.SetDefault("DATADIR", "./data")
-	viper.SetDefault("ACTIVITY_DAYS", 600)
-	viper.SetDefault("API_BASEURL", "http://localhost:1337/v1/")
-	viper.SetDefault("MAIN_PUBLISHER_ID", "")
-	viper.SetDefault("GITHUB_TOKEN", "")
-	viper.SetDefault("GITLAB_TOKEN", "")
-	viper.SetDefault("API_X_API_KEY", "")
+	viper.SetDefault("ACTIVITY_DAYS", 60)
 
 	if err := viper.ReadInConfig(); err != nil {
 		var notFoundError viper.ConfigFileNotFoundError
@@ -39,6 +36,17 @@ func main() {
 			panic(fmt.Errorf("error reading config file: %w", err))
 		}
 	}
+
+	if logPath := viper.GetString("LOG_FILE"); logPath != "" {
+		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err != nil {
+			log.Fatalf("unable to open log file %s: %v", logPath, err)
+		}
+
+		log.SetOutput(io.MultiWriter(os.Stdout, f))
+		log.Infof("Logging to %s", logPath)
+	}
+	log.Infof("DATADIR=%s", viper.GetString("DATADIR"))
 
 	cmd.Execute()
 }
