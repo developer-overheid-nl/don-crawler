@@ -30,6 +30,7 @@ type Crawler struct {
 
 	Index        string
 	repositories chan common.Repository
+	repoLocks    repoLockMap
 	// Sync mutex guard.
 	publishersWg   sync.WaitGroup
 	repositoriesWg sync.WaitGroup
@@ -45,6 +46,30 @@ var (
 	repoTitleRegexp = regexp.MustCompile(`(?i)<title[^>]*>([^<]*)</title>`)
 	repoDescRegexp  = regexp.MustCompile(`(?i)<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["'][^>]*>`)
 )
+
+// repoLockMap provides per-repository locks for git operations.
+type repoLockMap struct {
+	mu    sync.Mutex
+	locks map[string]*sync.Mutex
+}
+
+func (r *repoLockMap) lock(key string) func() {
+	r.mu.Lock()
+	if r.locks == nil {
+		r.locks = make(map[string]*sync.Mutex)
+	}
+	lock := r.locks[key]
+
+	if lock == nil {
+		lock = &sync.Mutex{}
+		r.locks[key] = lock
+	}
+	r.mu.Unlock()
+
+	lock.Lock()
+
+	return lock.Unlock
+}
 
 // NewCrawler initializes a new Crawler object and connects to Elasticsearch (if dryRun == false).
 func NewCrawler(dryRun bool) *Crawler {
@@ -419,7 +444,10 @@ func (c *Crawler) cloneAndLogActivity(
 		return
 	}
 
+	unlock := c.repoLocks.lock(repoLockKey(repository))
+
 	err = git.CloneRepository(repository.URL.Host, repository.Name, cloneURL, c.Index)
+	unlock()
 	if err != nil {
 		*logEntries = append(*logEntries, fmt.Sprintf("[%s] error while cloning: %v\n", repository.Name, err))
 	}
@@ -487,6 +515,20 @@ func repoPostDetails(repository common.Repository) (*string, *string) {
 	repoDesc := &desc
 
 	return repoTitle, repoDesc
+}
+
+func repoLockKey(repository common.Repository) string {
+	if repository.Name == "" {
+		return repository.URL.Host
+	}
+
+	parts := strings.Split(repository.Name, "/")
+
+	if len(parts) < 2 {
+		return repository.URL.Host + "/" + repository.Name
+	}
+
+	return fmt.Sprintf("%s/%s/%s", repository.URL.Host, parts[0], parts[1])
 }
 
 func activityDays() int {
