@@ -27,7 +27,7 @@ func main() {
 	// Enable VIPER to read Environment Variables
 	viper.AutomaticEnv()
 
-	viper.SetDefault("DATADIR", "./data")
+	viper.SetDefault("DATADIR", "/app/data")
 	viper.SetDefault("ACTIVITY_DAYS", 60)
 
 	if err := viper.ReadInConfig(); err != nil {
