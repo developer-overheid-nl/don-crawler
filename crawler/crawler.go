@@ -397,16 +397,29 @@ func (c *Crawler) cloneAndLogActivity(
 	logEntries *[]string,
 ) {
 	// Calculate Repository activity index and vitality. Defaults to 60 days.
-	var parsed publiccode.PublicCode
+	var (
+		cloneURL = repository.CanonicalURL.String()
+		err      error
+	)
 
-	var err error
+	if repository.FileRawURL != "" {
+		var parsed publiccode.PublicCode
 
-	parsed, err = parser.Parse(repository.FileRawURL)
-	if err != nil {
-		*logEntries = append(*logEntries, fmt.Sprintf("[%s] error while parsing: %v\n", repository.FileRawURL, err))
+		parsed, err = parser.Parse(repository.FileRawURL)
+		if err != nil {
+			*logEntries = append(*logEntries, fmt.Sprintf("[%s] error while parsing: %v\n", repository.FileRawURL, err))
+		} else if parsedURL := parsed.Url(); parsedURL != nil && parsedURL.String() != "" {
+			cloneURL = parsedURL.String()
+		}
 	}
 
-	err = git.CloneRepository(repository.URL.Host, repository.Name, parsed.Url().String(), c.Index)
+	if cloneURL == "" {
+		*logEntries = append(*logEntries, fmt.Sprintf("[%s] unable to determine clone URL\n", repository.Name))
+
+		return
+	}
+
+	err = git.CloneRepository(repository.URL.Host, repository.Name, cloneURL, c.Index)
 	if err != nil {
 		*logEntries = append(*logEntries, fmt.Sprintf("[%s] error while cloning: %v\n", repository.Name, err))
 	}
