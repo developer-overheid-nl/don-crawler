@@ -278,7 +278,6 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 
 	if desc == "" && cloneErr == nil {
 		readmeContents, readmeErr := git.ReadReadme(repository)
-
 		if readmeErr != nil {
 			if !errors.Is(readmeErr, git.ErrReadmeNotFound) {
 				logEntries = append(
@@ -677,9 +676,9 @@ func descriptionFromReadme(contents string) string {
 	contents = strings.ReplaceAll(contents, "\r\n", "\n")
 	lines := strings.Split(contents, "\n")
 
-	var paragraph []string
+	paragraph := make([]string, len(lines))
 
-	for _, line := range lines {
+	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
 		if trimmed == "" {
@@ -694,7 +693,7 @@ func descriptionFromReadme(contents string) string {
 			continue
 		}
 
-		paragraph = append(paragraph, trimmed)
+		paragraph[i] = trimmed
 	}
 
 	return strings.Join(paragraph, " ")
