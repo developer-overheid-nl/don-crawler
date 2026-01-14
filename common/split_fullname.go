@@ -8,8 +8,17 @@ import (
 )
 
 // SplitFullName split a git FullName format to vendor and repo strings.
+// Supports nested namespaces (e.g. group/subgroup/repo).
 func SplitFullName(fullName string) (string, string) {
-	s := strings.Split(fullName, "/")
+	parts := strings.Split(fullName, "/")
 
-	return s[0], s[1]
+	if len(parts) == 0 {
+		return "", ""
+	}
+
+	if len(parts) == 1 {
+		return "", parts[0]
+	}
+
+	return strings.Join(parts[:len(parts)-1], "/"), parts[len(parts)-1]
 }
