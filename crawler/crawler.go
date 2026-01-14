@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"runtime"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -20,7 +19,6 @@ import (
 	"github.com/italia/publiccode-crawler/v4/common"
 	"github.com/italia/publiccode-crawler/v4/git"
 	"github.com/italia/publiccode-crawler/v4/scanner"
-	"github.com/italia/publiccode-parser-go/v5"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -170,8 +168,8 @@ func (c *Crawler) CrawlPublishers(publishers []common.Publisher) error {
 	return c.crawl()
 }
 
-// ScanPublisher scans all the publisher' repositories and sends the ones
-// with a valid publiccode.yml to the repositories channel.
+// ScanPublisher scans all the publisher' repositories and sends any repository
+// with a publiccode.yml to the repositories channel.
 func (c *Crawler) ScanPublisher(publisher common.Publisher) {
 	log.Infof("Processing publisher: %s", publisher.Name)
 
@@ -233,7 +231,7 @@ func (c *Crawler) ScanPublisher(publisher common.Publisher) {
 }
 
 // ProcessRepositories process the repositories channel, check the repo's publiccode.yml
-// and send new data to the API if the publiccode.yml file is valid.
+// and send new data to the API.
 func (c *Crawler) ProcessRepositories(repos chan common.Repository) {
 	defer c.repositoriesWg.Done()
 
@@ -242,7 +240,7 @@ func (c *Crawler) ProcessRepositories(repos chan common.Repository) {
 	}
 }
 
-// ProcessRepo looks for a publiccode.yml file in a repository, and if found it processes it.
+// ProcessRepo looks for a publiccode.yml file in a repository, and if found it records the link.
 func (c *Crawler) ProcessRepo(repository common.Repository) {
 	var (
 		logEntries []string
@@ -256,11 +254,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 	}()
 
 	c.ensurePubliccodeFile(&repository, &logEntries)
-
-	parser, err := c.newPubliccodeParser(repository.Name, &logEntries)
-	if err != nil {
-		return
-	}
+	hasPubliccode := repository.FileRawURL != ""
 
 	if c.DryRun {
 		log.Infof("[%s]: Skipping other steps (--dry-run)", repository.Name)
@@ -268,37 +262,39 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		return
 	}
 
-	parsedPubliccode := c.parsePubliccode(repository, parser, &logEntries)
-
-	cloneURL := resolveCloneURL(repository, parsedPubliccode)
+	cloneURL := repository.CanonicalURL.String()
 
 	cloneErr := c.cloneAndLogActivity(repository, cloneURL, &logEntries)
 
-	title, desc := publiccodeMetadata(parsedPubliccode)
-
-	if desc == "" && cloneErr == nil {
-		readmeContents, readmeErr := git.ReadReadme(repository)
-		if readmeErr != nil {
-			if !errors.Is(readmeErr, git.ErrReadmeNotFound) {
-				logEntries = append(
-					logEntries,
-					fmt.Sprintf("[%s] failed to read README: %v", repository.Name, readmeErr),
-				)
+	if !hasPubliccode {
+		if repository.Description == "" && cloneErr == nil {
+			readmeContents, readmeErr := git.ReadReadme(repository)
+			if readmeErr != nil {
+				if !errors.Is(readmeErr, git.ErrReadmeNotFound) {
+					logEntries = append(
+						logEntries,
+						fmt.Sprintf("[%s] failed to read README: %v", repository.Name, readmeErr),
+					)
+				}
+			} else {
+				repository.Description = descriptionFromReadme(readmeContents)
 			}
-		} else {
-			desc = descriptionFromReadme(readmeContents)
+		}
+
+		if repository.Title == "" {
+			repository.Title = titleFromRepositoryName(repository)
 		}
 	}
 
-	if title == "" {
-		title = titleFromRepositoryName(repository)
-	}
-
-	repository.Title = title
-	repository.Description = desc
-
 	publiccodeURL := repositoryPubliccodeURL(repository)
-	repoTitle, repoDesc := repoPostDetails(repository)
+
+	var repoTitle, repoDesc *string
+	if hasPubliccode {
+		repoTitle = nil
+		repoDesc = nil
+	} else {
+		repoTitle, repoDesc = repoPostDetails(repository)
+	}
 
 	log.Debugf(
 		"[%s] posting repository (title=%q desc=%t publiccode=%t)",
@@ -361,108 +357,6 @@ func (c *Crawler) ensurePubliccodeFile(repository *common.Repository, logEntries
 	repository.FileRawURL = ""
 }
 
-func (c *Crawler) newPubliccodeParser(repoName string, logEntries *[]string) (*publiccode.Parser, error) {
-	domain := publiccode.Domain{
-		Host:        "github.com",
-		UseTokenFor: []string{"github.com", "api.github.com", "raw.githubusercontent.com"},
-		BasicAuth:   []string{os.Getenv("GITHUB_TOKEN")},
-	}
-
-	parser, err := publiccode.NewParser(publiccode.ParserConfig{Domain: domain})
-	if err != nil {
-		*logEntries = append(
-			*logEntries,
-			fmt.Sprintf("[%s] can't create a Parser: %s\n", repoName, err.Error()),
-		)
-
-		return nil, err
-	}
-
-	return parser, nil
-}
-
-func (c *Crawler) parsePubliccode(
-	repository common.Repository,
-	parser *publiccode.Parser,
-	logEntries *[]string,
-) publiccode.PublicCode {
-	if repository.FileRawURL == "" {
-		return nil
-	}
-
-	parsed, err := parser.Parse(repository.FileRawURL)
-	if err != nil {
-		*logEntries = append(*logEntries, fmt.Sprintf("[%s] error while parsing: %v\n", repository.FileRawURL, err))
-
-		return nil
-	}
-
-	return parsed
-}
-
-func publiccodeMetadata(parsed publiccode.PublicCode) (string, string) {
-	if parsed == nil {
-		return "", ""
-	}
-
-	switch v := parsed.(type) {
-	case publiccode.PublicCodeV0:
-		title := strings.TrimSpace(v.Name)
-		desc := descriptionFromPubliccodeV0(v.Description)
-
-		return title, desc
-	default:
-		return "", ""
-	}
-}
-
-func descriptionFromPubliccodeV0(descriptions map[string]publiccode.DescV0) string {
-	if len(descriptions) == 0 {
-		return ""
-	}
-
-	preferred := []string{"nl", "nl-nl", "en", "en-us"}
-	byLower := make(map[string]publiccode.DescV0, len(descriptions))
-
-	for lang, desc := range descriptions {
-		byLower[strings.ToLower(lang)] = desc
-	}
-
-	for _, lang := range preferred {
-		if desc, ok := byLower[lang]; ok {
-			if text := strings.TrimSpace(desc.ShortDescription); text != "" {
-				return text
-			}
-
-			if text := strings.TrimSpace(desc.LongDescription); text != "" {
-				return text
-			}
-		}
-	}
-
-	keys := make([]string, 0, len(descriptions))
-
-	for lang := range descriptions {
-		keys = append(keys, lang)
-	}
-
-	sort.Strings(keys)
-
-	for _, lang := range keys {
-		desc := descriptions[lang]
-
-		if text := strings.TrimSpace(desc.ShortDescription); text != "" {
-			return text
-		}
-
-		if text := strings.TrimSpace(desc.LongDescription); text != "" {
-			return text
-		}
-	}
-
-	return ""
-}
-
 func titleFromRepositoryName(repository common.Repository) string {
 	if repository.Name == "" {
 		return ""
@@ -503,20 +397,6 @@ func (c *Crawler) lastActivityFromAPI(repository common.Repository) (time.Time, 
 	}
 
 	return lastActivity, false
-}
-
-func resolveCloneURL(repository common.Repository, parsed publiccode.PublicCode) string {
-	cloneURL := repository.CanonicalURL.String()
-
-	if parsed == nil {
-		return cloneURL
-	}
-
-	if parsedURL := parsed.Url(); parsedURL != nil && parsedURL.String() != "" {
-		return parsedURL.String()
-	}
-
-	return cloneURL
 }
 
 func (c *Crawler) cloneAndLogActivity(

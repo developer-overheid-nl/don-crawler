@@ -6,7 +6,6 @@ require (
 	github.com/google/go-github/v43 v43.0.0
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/italia/httpclient-lib-go v0.0.2
-	github.com/italia/publiccode-parser-go/v5 v5.2.3
 	github.com/joho/godotenv v1.5.1
 	github.com/ktrysmt/go-bitbucket v0.9.88
 	github.com/sirupsen/logrus v1.9.3
