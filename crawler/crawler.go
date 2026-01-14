@@ -7,8 +7,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
+	"path"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -41,11 +42,6 @@ type Crawler struct {
 
 	apiClient apiclient.APIClient
 }
-
-var (
-	repoTitleRegexp = regexp.MustCompile(`(?i)<title[^>]*>([^<]*)</title>`)
-	repoDescRegexp  = regexp.MustCompile(`(?i)<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["'][^>]*>`)
-)
 
 // repoLockMap provides per-repository locks for git operations.
 type repoLockMap struct {
@@ -272,6 +268,36 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		return
 	}
 
+	parsedPubliccode := c.parsePubliccode(repository, parser, &logEntries)
+
+	cloneURL := resolveCloneURL(repository, parsedPubliccode)
+
+	cloneErr := c.cloneAndLogActivity(repository, cloneURL, &logEntries)
+
+	title, desc := publiccodeMetadata(parsedPubliccode)
+
+	if desc == "" && cloneErr == nil {
+		readmeContents, readmeErr := git.ReadReadme(repository)
+
+		if readmeErr != nil {
+			if !errors.Is(readmeErr, git.ErrReadmeNotFound) {
+				logEntries = append(
+					logEntries,
+					fmt.Sprintf("[%s] failed to read README: %v", repository.Name, readmeErr),
+				)
+			}
+		} else {
+			desc = descriptionFromReadme(readmeContents)
+		}
+	}
+
+	if title == "" {
+		title = titleFromRepositoryName(repository)
+	}
+
+	repository.Title = title
+	repository.Description = desc
+
 	publiccodeURL := repositoryPubliccodeURL(repository)
 	repoTitle, repoDesc := repoPostDetails(repository)
 
@@ -283,11 +309,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		publiccodeURL != nil,
 	)
 
-	lastActivity, lastActivityFromAPI := c.lastActivityFromAPI(repository)
-
-	c.cloneAndLogActivity(repository, parser, &logEntries)
-
-	lastActivity = c.lastActivityFromGit(repository, lastActivity, lastActivityFromAPI, &logEntries)
+	lastActivity := c.lastActivityFromGit(repository, cloneErr, &logEntries)
 
 	if _, err = c.apiClient.PostRepository(
 		repository.CanonicalURL.String(),
@@ -308,7 +330,6 @@ func (c *Crawler) ensurePubliccodeFile(repository *common.Repository, logEntries
 	if repository.FileRawURL == "" {
 		*logEntries = append(*logEntries, fmt.Sprintf("[%s] publiccode.yml not found", repository.Name))
 		log.Warnf("[%s] publiccode.yml missing, will proceed without it", repository.Name)
-		c.fillMissingMetadata(repository, logEntries)
 
 		return
 	}
@@ -341,30 +362,6 @@ func (c *Crawler) ensurePubliccodeFile(repository *common.Repository, logEntries
 	repository.FileRawURL = ""
 }
 
-func (c *Crawler) fillMissingMetadata(repository *common.Repository, logEntries *[]string) {
-	if repository.Title != "" && repository.Description != "" {
-		return
-	}
-
-	title, desc, metaErr := c.fetchRepoMetadata(*repository)
-	if metaErr != nil {
-		*logEntries = append(
-			*logEntries,
-			fmt.Sprintf("[%s] failed to fetch repo metadata: %v", repository.Name, metaErr),
-		)
-
-		return
-	}
-
-	if repository.Title == "" && title != "" {
-		repository.Title = title
-	}
-
-	if repository.Description == "" && desc != "" {
-		repository.Description = desc
-	}
-}
-
 func (c *Crawler) newPubliccodeParser(repoName string, logEntries *[]string) (*publiccode.Parser, error) {
 	domain := publiccode.Domain{
 		Host:        "github.com",
@@ -383,6 +380,96 @@ func (c *Crawler) newPubliccodeParser(repoName string, logEntries *[]string) (*p
 	}
 
 	return parser, nil
+}
+
+func (c *Crawler) parsePubliccode(
+	repository common.Repository,
+	parser *publiccode.Parser,
+	logEntries *[]string,
+) publiccode.PublicCode {
+	if repository.FileRawURL == "" {
+		return nil
+	}
+
+	parsed, err := parser.Parse(repository.FileRawURL)
+	if err != nil {
+		*logEntries = append(*logEntries, fmt.Sprintf("[%s] error while parsing: %v\n", repository.FileRawURL, err))
+
+		return nil
+	}
+
+	return parsed
+}
+
+func publiccodeMetadata(parsed publiccode.PublicCode) (string, string) {
+	if parsed == nil {
+		return "", ""
+	}
+
+	switch v := parsed.(type) {
+	case publiccode.PublicCodeV0:
+		title := strings.TrimSpace(v.Name)
+		desc := descriptionFromPubliccodeV0(v.Description)
+
+		return title, desc
+	default:
+		return "", ""
+	}
+}
+
+func descriptionFromPubliccodeV0(descriptions map[string]publiccode.DescV0) string {
+	if len(descriptions) == 0 {
+		return ""
+	}
+
+	preferred := []string{"nl", "nl-nl", "en", "en-us"}
+	byLower := make(map[string]publiccode.DescV0, len(descriptions))
+
+	for lang, desc := range descriptions {
+		byLower[strings.ToLower(lang)] = desc
+	}
+
+	for _, lang := range preferred {
+		if desc, ok := byLower[lang]; ok {
+			if text := strings.TrimSpace(desc.ShortDescription); text != "" {
+				return text
+			}
+
+			if text := strings.TrimSpace(desc.LongDescription); text != "" {
+				return text
+			}
+		}
+	}
+
+	keys := make([]string, 0, len(descriptions))
+
+	for lang := range descriptions {
+		keys = append(keys, lang)
+	}
+
+	sort.Strings(keys)
+
+	for _, lang := range keys {
+		desc := descriptions[lang]
+
+		if text := strings.TrimSpace(desc.ShortDescription); text != "" {
+			return text
+		}
+
+		if text := strings.TrimSpace(desc.LongDescription); text != "" {
+			return text
+		}
+	}
+
+	return ""
+}
+
+func titleFromRepositoryName(repository common.Repository) string {
+	if repository.Name == "" {
+		return ""
+	}
+
+	return path.Base(repository.Name)
 }
 
 func (c *Crawler) lastActivityFromAPI(repository common.Repository) (time.Time, bool) {
@@ -419,37 +506,35 @@ func (c *Crawler) lastActivityFromAPI(repository common.Repository) (time.Time, 
 	return lastActivity, false
 }
 
-func (c *Crawler) cloneAndLogActivity(
-	repository common.Repository,
-	parser *publiccode.Parser,
-	logEntries *[]string,
-) {
-	// Calculate Repository activity index and vitality. Defaults to 60 days.
-	var (
-		cloneURL = repository.CanonicalURL.String()
-		err      error
-	)
+func resolveCloneURL(repository common.Repository, parsed publiccode.PublicCode) string {
+	cloneURL := repository.CanonicalURL.String()
 
-	if repository.FileRawURL != "" {
-		var parsed publiccode.PublicCode
-
-		parsed, err = parser.Parse(repository.FileRawURL)
-		if err != nil {
-			*logEntries = append(*logEntries, fmt.Sprintf("[%s] error while parsing: %v\n", repository.FileRawURL, err))
-		} else if parsedURL := parsed.Url(); parsedURL != nil && parsedURL.String() != "" {
-			cloneURL = parsedURL.String()
-		}
+	if parsed == nil {
+		return cloneURL
 	}
 
+	if parsedURL := parsed.Url(); parsedURL != nil && parsedURL.String() != "" {
+		return parsedURL.String()
+	}
+
+	return cloneURL
+}
+
+func (c *Crawler) cloneAndLogActivity(
+	repository common.Repository,
+	cloneURL string,
+	logEntries *[]string,
+) error {
+	// Calculate Repository activity index and vitality. Defaults to 60 days.
 	if cloneURL == "" {
 		*logEntries = append(*logEntries, fmt.Sprintf("[%s] unable to determine clone URL\n", repository.Name))
 
-		return
+		return errors.New("clone URL empty")
 	}
 
 	unlock := c.repoLocks.lock(repoLockKey(repository))
 
-	err = git.CloneRepository(repository.URL.Host, repository.Name, cloneURL, c.Index)
+	err := git.CloneRepository(repository.URL.Host, repository.Name, cloneURL, c.Index)
 
 	unlock()
 
@@ -471,17 +556,16 @@ func (c *Crawler) cloneAndLogActivity(
 			fmt.Sprintf("[%s] activity index in the last %d days: %f\n", repository.Name, activityDays, activityIndex),
 		)
 	}
+
+	return err
 }
 
 func (c *Crawler) lastActivityFromGit(
 	repository common.Repository,
-	lastActivity time.Time,
-	fromAPI bool,
+	cloneErr error,
 	logEntries *[]string,
 ) time.Time {
-	if fromAPI {
-		return lastActivity
-	}
+	lastActivity := repository.UpdatedAt
 
 	last, lastErr := git.LastCommitTime(repository)
 	if lastErr == nil {
@@ -492,6 +576,14 @@ func (c *Crawler) lastActivityFromGit(
 		*logEntries,
 		fmt.Sprintf("[%s] unable to determine last activity: %v", repository.Name, lastErr),
 	)
+
+	if cloneErr != nil {
+		apiLast, ok := c.lastActivityFromAPI(repository)
+
+		if ok {
+			return apiLast
+		}
+	}
 
 	return lastActivity
 }
@@ -581,46 +673,49 @@ func (c *Crawler) crawl() error {
 	return nil
 }
 
-func (c *Crawler) fetchRepoMetadata(repository common.Repository) (string, string, error) {
-	repoURL := strings.TrimSuffix(repository.URL.String(), ".git")
-	if repoURL == "" {
-		repoURL = strings.TrimSuffix(repository.CanonicalURL.String(), ".git")
+func descriptionFromReadme(contents string) string {
+	contents = strings.ReplaceAll(contents, "\r\n", "\n")
+	lines := strings.Split(contents, "\n")
+
+	var paragraph []string
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if trimmed == "" {
+			if len(paragraph) > 0 {
+				break
+			}
+
+			continue
+		}
+
+		if len(paragraph) == 0 && isReadmeSkippableLine(trimmed) {
+			continue
+		}
+
+		paragraph = append(paragraph, trimmed)
 	}
 
-	if repoURL == "" {
-		return "", "", fmt.Errorf("repository URL empty")
-	}
-
-	resp, err := httpclient.GetURL(repoURL, repository.Headers)
-	if err != nil {
-		return "", "", err
-	}
-
-	if resp.Status.Code != http.StatusOK {
-		return "", "", fmt.Errorf("status %d", resp.Status.Code)
-	}
-
-	body := resp.Body
-
-	return extractRepoTitle(body), extractRepoDescription(body), nil
+	return strings.Join(paragraph, " ")
 }
 
-func extractRepoTitle(body []byte) string {
-	match := repoTitleRegexp.FindSubmatch(body)
-	if len(match) < 2 {
-		return ""
+func isReadmeSkippableLine(line string) bool {
+	lower := strings.ToLower(line)
+
+	if strings.HasPrefix(line, "#") {
+		return true
 	}
 
-	return strings.TrimSpace(string(match[1]))
-}
-
-func extractRepoDescription(body []byte) string {
-	match := repoDescRegexp.FindSubmatch(body)
-	if len(match) < 2 {
-		return ""
+	if strings.HasPrefix(lower, "<img") || strings.HasPrefix(lower, "<a") {
+		return true
 	}
 
-	return strings.TrimSpace(string(match[1]))
+	if strings.HasPrefix(line, "![") || strings.HasPrefix(line, "[!") {
+		return true
+	}
+
+	return false
 }
 
 func ensureDescription(repository common.Repository) string {

@@ -25,3 +25,6 @@ config.toml
 # Downloaded files
 cache
 data
+
+.hypothesis
+.hypothesis/*
