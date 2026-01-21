@@ -213,7 +213,7 @@ func addGroupProjects(
 ) error {
 	includeSubgroups := true
 	opts := &gitlab.ListGroupProjectsOptions{
-		ListOptions:       gitlab.ListOptions{Page: 1},
+		ListOptions:      gitlab.ListOptions{Page: 1},
 		IncludeSubGroups: &includeSubgroups,
 	}
 
