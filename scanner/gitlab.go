@@ -211,8 +211,10 @@ func generateGitlabRawURL(baseURL, defaultBranch string) (string, error) {
 func addGroupProjects(
 	group gitlab.Group, publisher common.Publisher, repositories chan common.Repository, client *gitlab.Client,
 ) error {
+	includeSubgroups := true
 	opts := &gitlab.ListGroupProjectsOptions{
-		ListOptions: gitlab.ListOptions{Page: 1},
+		ListOptions:       gitlab.ListOptions{Page: 1},
+		IncludeSubGroups: &includeSubgroups,
 	}
 
 	for {
