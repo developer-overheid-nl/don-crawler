@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 
+	git "github.com/go-git/go-git/v5"
+	gitcfg "github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/italia/publiccode-crawler/v4/common"
 	githubapp "github.com/italia/publiccode-crawler/v4/internal/githubapp"
 	"github.com/spf13/viper"
@@ -27,64 +29,78 @@ func CloneRepository(hostname, name, gitURL, _ string) error {
 	vendor, repo := common.SplitFullName(name)
 	path := filepath.Join(viper.GetString("DATADIR"), "repos", hostname, vendor, repo, "gitClone")
 
-	authURL, err := withAuthToken(hostname, gitURL)
+	auth, err := withAuthToken(hostname, gitURL)
 	if err != nil {
 		return err
 	}
 
 	// If folder already exists it will do a fetch instead of a clone.
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		// Ensure remote URL has auth if needed.
-		_, _ = exec.Command("git", "-C", path, "remote", "set-url", "origin", authURL).CombinedOutput()
-
-		out, err := exec.Command("git", "-C", path, "fetch", "--all").CombinedOutput()
+		repo, err := git.PlainOpen(path)
 		if err != nil {
-			return fmt.Errorf("cannot git pull the repository: %s: %w", out, err)
+			return fmt.Errorf("cannot open git repository: %w", err)
+		}
+
+		fetchOpts := &git.FetchOptions{
+			RemoteName: git.DefaultRemoteName,
+			RemoteURL:  gitURL,
+			Auth:       auth,
+			RefSpecs:   []gitcfg.RefSpec{"+refs/*:refs/*"},
+			Tags:       git.AllTags,
+			Force:      true,
+			Prune:      true,
+		}
+		if err := repo.Fetch(fetchOpts); err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+			return fmt.Errorf("cannot fetch the repository: %w", err)
 		}
 
 		return nil
 	}
 
-	out, err := exec.Command("git", "clone", "--filter=blob:none", "--mirror", authURL, path).CombinedOutput()
+	_, err = git.PlainClone(path, true, &git.CloneOptions{
+		URL:    gitURL,
+		Auth:   auth,
+		Mirror: true,
+		Tags:   git.AllTags,
+	})
 	if err != nil {
-		return fmt.Errorf("cannot git clone the repository: %s: %w", out, err)
+		return fmt.Errorf("cannot git clone the repository: %w", err)
 	}
 
 	return err
 }
 
-func withAuthToken(hostname, gitURL string) (string, error) {
-	u, err := url.Parse(gitURL)
-	if err != nil {
-		return gitURL, fmt.Errorf("invalid git URL %q: %w", gitURL, err)
-	}
-
+func withAuthToken(hostname, _ string) (transport.AuthMethod, error) {
 	switch hostname {
 	case "github.com":
 		provider, err := githubapp.DefaultProvider()
 		if err != nil {
-			return "", fmt.Errorf("github app auth unavailable: %w", err)
+			return nil, fmt.Errorf("github app auth unavailable: %w", err)
 		}
 
 		if provider != nil {
 			token, _, err := provider.Token(context.Background())
 			if err != nil {
-				return "", fmt.Errorf("github app token fetch failed: %w", err)
+				return nil, fmt.Errorf("github app token fetch failed: %w", err)
 			}
 
-			u.User = url.UserPassword("x-access-token", token)
-
-			return u.String(), nil
+			return &githttp.BasicAuth{
+				Username: "x-access-token",
+				Password: token,
+			}, nil
 		}
 
-		return "", errors.New("github app auth not configured for github.com")
+		return nil, errors.New("github app auth not configured for github.com")
 	case "gitlab.com":
 		if token := os.Getenv("GITLAB_TOKEN"); token != "" {
-			u.User = url.UserPassword("oauth2", token)
+			return &githttp.BasicAuth{
+				Username: "oauth2",
+				Password: token,
+			}, nil
 		}
 	default:
 		// No-op for other hosts.
 	}
 
-	return u.String(), nil
+	return nil, fmt.Errorf("no auth method available for host %s", hostname)
 }
