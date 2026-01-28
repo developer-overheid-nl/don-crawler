@@ -29,7 +29,7 @@ func CloneRepository(hostname, name, gitURL, _ string) error {
 	vendor, repo := common.SplitFullName(name)
 	path := filepath.Join(viper.GetString("DATADIR"), "repos", hostname, vendor, repo, "gitClone")
 
-	authURL, err := withAuthToken(hostname, gitURL)
+	auth, err := withAuthToken(hostname, gitURL)
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func CloneRepository(hostname, name, gitURL, _ string) error {
 		return nil
 	}
 
-	_, err := git.PlainClone(path, true, &git.CloneOptions{
+	_, err = git.PlainClone(path, true, &git.CloneOptions{
 		URL:    gitURL,
 		Auth:   auth,
 		Mirror: true,
@@ -70,41 +70,37 @@ func CloneRepository(hostname, name, gitURL, _ string) error {
 	return err
 }
 
-func withAuthToken(hostname, gitURL string) (string, error) {
-	u, err := url.Parse(gitURL)
-	if err != nil {
-		return gitURL, fmt.Errorf("invalid git URL %q: %w", gitURL, err)
-	}
-
+func withAuthToken(hostname, _ string) (transport.AuthMethod, error) {
 	switch hostname {
 	case "github.com":
 		provider, err := githubapp.DefaultProvider()
 		if err != nil {
-			return "", fmt.Errorf("github app auth unavailable: %w", err)
+			return nil, fmt.Errorf("github app auth unavailable: %w", err)
 		}
 
 		if provider != nil {
 			token, _, err := provider.Token(context.Background())
 			if err != nil {
-				return "", fmt.Errorf("github app token fetch failed: %w", err)
+				return nil, fmt.Errorf("github app token fetch failed: %w", err)
 			}
 
-			u.User = url.UserPassword("x-access-token", token)
-
-			return u.String(), nil
+			return &githttp.BasicAuth{
+				Username: "x-access-token",
+				Password: token,
+			}, nil
 		}
 
-		return "", errors.New("github app auth not configured for github.com")
+		return nil, errors.New("github app auth not configured for github.com")
 	case "gitlab.com":
 		if token := os.Getenv("GITLAB_TOKEN"); token != "" {
 			return &githttp.BasicAuth{
 				Username: "oauth2",
 				Password: token,
-			}
+			}, nil
 		}
 	default:
 		// No-op for other hosts.
 	}
 
-	return u.String(), nil
+	return nil, nil
 }
