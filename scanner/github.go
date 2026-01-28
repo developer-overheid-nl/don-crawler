@@ -7,13 +7,13 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/go-github/v43/github"
 	"github.com/italia/publiccode-crawler/v4/common"
+	githubapp "github.com/italia/publiccode-crawler/v4/internal/githubapp"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
@@ -28,27 +28,24 @@ var githubCommitRateLimit = struct {
 	reset time.Time
 }{}
 
-// NewGitHubScanner returns a new GitHubScanner using the
-// authentication token from the GITHUB_TOKEN environment variable or,
-// if not set, the tokens in domains.yml.
+// NewGitHubScanner returns a new GitHubScanner using a GitHub App installation token (GIT_OAUTH_* env vars).
 func NewGitHubScanner() Scanner {
 	ctx := context.Background()
-	token := os.Getenv("GITHUB_TOKEN")
 
 	var httpClient *http.Client
 
-	if token == "" {
-		log.Infof("GitHub API auth: GITHUB_TOKEN not set; using unauthenticated client")
-
-		httpClient = http.DefaultClient
-	} else {
-		log.Infof("GitHub API auth: GITHUB_TOKEN set; using authenticated client")
-
-		ts := oauth2.StaticTokenSource(
-			&oauth2.Token{AccessToken: token},
-		)
-		httpClient = oauth2.NewClient(ctx, ts)
+	provider, err := githubapp.DefaultProvider()
+	if err != nil {
+		log.Fatalf("GitHub API auth: unable to configure GitHub App: %v", err)
 	}
+
+	if provider == nil {
+		log.Fatal("GitHub API auth: missing GitHub App env (GIT_OAUTH_CLIENTID/GIT_OAUTH_INSTALLATION_ID/GIT_OAUTH_SECRET)")
+	}
+
+	log.Infof("GitHub API auth: using GitHub App installation token")
+
+	httpClient = oauth2.NewClient(ctx, provider.TokenSource(ctx))
 
 	client := github.NewClient(httpClient)
 

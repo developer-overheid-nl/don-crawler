@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/italia/publiccode-crawler/v4/common"
+	githubapp "github.com/italia/publiccode-crawler/v4/internal/githubapp"
 	"github.com/spf13/viper"
 )
 
@@ -26,7 +28,11 @@ func CloneRepository(hostname, name, gitURL, _ string) error {
 
 	vendor, repo := common.SplitFullName(name)
 	path := filepath.Join(viper.GetString("DATADIR"), "repos", hostname, vendor, repo, "gitClone")
-	auth := gitAuth(hostname)
+
+	authURL, err := withAuthToken(hostname, gitURL)
+	if err != nil {
+		return err
+	}
 
 	// If folder already exists it will do a fetch instead of a clone.
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -64,15 +70,31 @@ func CloneRepository(hostname, name, gitURL, _ string) error {
 	return err
 }
 
-func gitAuth(hostname string) transport.AuthMethod {
+func withAuthToken(hostname, gitURL string) (string, error) {
+	u, err := url.Parse(gitURL)
+	if err != nil {
+		return gitURL, fmt.Errorf("invalid git URL %q: %w", gitURL, err)
+	}
+
 	switch hostname {
 	case "github.com":
-		if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-			return &githttp.BasicAuth{
-				Username: "x-access-token",
-				Password: token,
-			}
+		provider, err := githubapp.DefaultProvider()
+		if err != nil {
+			return "", fmt.Errorf("github app auth unavailable: %w", err)
 		}
+
+		if provider != nil {
+			token, _, err := provider.Token(context.Background())
+			if err != nil {
+				return "", fmt.Errorf("github app token fetch failed: %w", err)
+			}
+
+			u.User = url.UserPassword("x-access-token", token)
+
+			return u.String(), nil
+		}
+
+		return "", errors.New("github app auth not configured for github.com")
 	case "gitlab.com":
 		if token := os.Getenv("GITLAB_TOKEN"); token != "" {
 			return &githttp.BasicAuth{
@@ -84,5 +106,5 @@ func gitAuth(hostname string) transport.AuthMethod {
 		// No-op for other hosts.
 	}
 
-	return nil
+	return u.String(), nil
 }

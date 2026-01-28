@@ -3,9 +3,9 @@ package cmd
 import (
 	"github.com/italia/publiccode-crawler/v4/common"
 	"github.com/italia/publiccode-crawler/v4/crawler"
+	githubapp "github.com/italia/publiccode-crawler/v4/internal/githubapp"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 func init() {
@@ -26,8 +26,8 @@ Crawl a single software given its API id and its publisher.`,
 
 	Args: cobra.ExactArgs(2),
 	Run: func(_ *cobra.Command, args []string) {
-		if token := viper.GetString("GITHUB_TOKEN"); token == "" {
-			log.Fatal("Please set GITHUB_TOKEN, it's needed to use the GitHub API'")
+		if !githubapp.HasEnv() {
+			log.Fatal("Please set GIT_OAUTH_CLIENTID/GIT_OAUTH_INSTALLATION_ID/GIT_OAUTH_SECRET to use the GitHub API")
 		}
 
 		c := crawler.NewCrawler(dryRun)
