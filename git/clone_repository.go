@@ -102,5 +102,5 @@ func withAuthToken(hostname, _ string) (transport.AuthMethod, error) {
 		// No-op for other hosts.
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("no auth method available for host %s", hostname)
 }
