@@ -1,81 +1,64 @@
-# publiccode.yml crawler for the software catalog of Developers Italia
+# publiccode.yml crawler voor developer.overheid.nl
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/italia/publiccode-crawler/v4)](https://goreportcard.com/report/github.com/italia/publiccode-crawler/v4)
-[![Join the #publiccode channel](https://img.shields.io/badge/Slack%20channel-%23publiccode-blue.svg?logo=slack)](https://developersitalia.slack.com/messages/CAM3F785T)
-[![Get invited](https://slack.developers.italia.it/badge.svg)](https://slack.developers.italia.it/)
+## Beschrijving
 
-## Description
+developer.overheid.nl biedt een catalogus van Free and Open Source software
+voor publieke organisaties.
 
-Developers Italia provides [a catalog of Free and Open Source](https://developers.italia.it/en/search)
-software aimed to Public Administrations.
+`don-crawler` crawlt repositories van publishers uit de developer.overheid.nl
+bronnen en zoekt daarin specifiek naar `publiccode.yml` bestanden.
 
-`publiccode-crawler` retrieves the `publiccode.yml` files from the
-repositories of publishers found in the [Developers Italia API](https://github.com/italia/developers-italia-api).
+## Achtergrond
 
-## Setup and deployment processes
+Dit project is ooit gestart als een fork van de Developers Italia
+`publiccode-crawler`, maar is daarna als losse kopie doorontwikkeld en aangepast
+voor developer.overheid.nl.
 
-`publiccode-crawler` can either run manually on the target machine or it can be deployed
-from a Docker container.
+## Waarom publiccode.yml
 
-### Manually configure and build
+We gebruiken de publiccode.yml-standaard om metadata over open source projecten
+op een consistente en machine-leesbare manier vast te leggen. De standaard heeft
+twee doelen: projecten vindbaar maken en projectinformatie centraliseren.
+Het bestand hoort in de root van de repository.
 
-1. Rename `config.toml.example` to `config.toml` and set the variables
+Voordelen die dit oplevert:
 
-   > **NOTE**: The application also supports environment variables in substitution
-   > to config.toml file. Remember: "environment variables get higher priority than
-   > the ones in configuration file"
+- metadata staat in de codebase en is daarmee git-platform agnostisch;
+- metadata is machine-leesbaar en kan automatisch door catalogi worden ingelezen;
+- projecten zijn eenvoudiger te vinden (o.a. door bots die repos afstruinen op
+  `publiccode.yml` in de root).
 
-2. Build the binary with `go build`
+Meer uitleg staat op developer.overheid.nl in de toelichting bij de standaard:
+https://developer.overheid.nl/kennisbank/open-source/standaarden/publiccode-yml
 
-### Docker
+## Configuratie
 
-You can build the Docker image using
+Configuratie gaat via environment variables (optioneel uit een `.env` bestand).
+
+Belangrijkste variabelen:
+
+- `API_BASEURL` (basis-URL van de API)
+- `API_X_API_KEY` (optioneel, indien nodig)
+- `GIT_OAUTH_CLIENTID`, `GIT_OAUTH_INSTALLATION_ID`, `GIT_OAUTH_SECRET` (GitHub App)
+- `GITLAB_TOKEN` (optioneel, voor GitLab)
+- `DATADIR` (default `./data`)
+- `ACTIVITY_DAYS` (default `60`)
+- `LOG_FILE` (optioneel)
+
+## Build en run
 
 ```console
-docker build .
+go build
 ```
 
-or use the image published to DockerHub:
+## Gebruik
+
+Op dit moment ondersteunen we alleen het `crawl` command.
 
 ```console
-docker run -it italia/publiccode-crawler
+publiccode-crawler crawl
 ```
-
-## Commands
-
-### `publiccode-crawler crawl`
-
-Gets the list of publishers from `https://api.developers.italia.it/v1/publishers`
-and starts to crawl their repositories.
-
-### `publiccode-crawler crawl publishers*.yml`
-
-Gets the list of publishers in `publishers*.yml` and starts to crawl
-their repositories.
-
-### `publiccode-crawler crawl-software <software> <publisher>`
-
-Crawl just the software specified as parameter.
-It takes the software URL and its publisher id as parameters.
-
-Ex. `publiccode-crawler crawl-software https://api.developers.italia.it/v1/software/a2ea59b0-87cd-4419-b93f-00bed8a7b859 edb66b3d-3e36-4b69-aba9-b7c4661b3fdd`
-
-### Other commands
-
-* `crawler download-publishers` downloads organizations and repositories from
-  the [onboarding portal repository](https://github.com/italia/developers-italia-onboarding)
-  and saves them to a publishers YAML file.
-
-## See also
-
-* [developers-italia-api](https://github.com/italia/developers-italia-api): the API
-  used to store the results of the crawling
-* [publiccode-parser-go](https://github.com/italia/publiccode-parser-go): the Go
-  package for parsing publiccode.yml files
-
 ## Authors
 
-[Developers Italia](https://developers.italia.it) is a project by
-[AgID](https://www.agid.gov.it/) and the
-[Italian Digital Team](https://teamdigitale.governo.it/), which developed the
-crawler and maintains this repository.
+De oorspronkelijke crawler is ontwikkeld door Developers Italia. Deze repository
+wordt onderhouden als aparte, aangepaste kopie voor developer.overheid.nl.
