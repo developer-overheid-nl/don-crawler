@@ -152,7 +152,15 @@ linters:
       branch-max-lines: 2
     tagliatelle:
       case:
-        json: snake
+        rules:
+          json: snake
+        overrides:
+          - pkg: apiclient
+            rules:
+              json: camel
+          - pkg: common
+            rules:
+              json: camel
 
   exclusions:
     generated: lax

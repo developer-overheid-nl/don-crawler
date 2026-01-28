@@ -26,6 +26,7 @@ func CloneRepository(hostname, name, gitURL, _ string) error {
 
 	vendor, repo := common.SplitFullName(name)
 	path := filepath.Join(viper.GetString("DATADIR"), "repos", hostname, vendor, repo, "gitClone")
+
 	authURL, err := withAuthToken(hostname, gitURL)
 	if err != nil {
 		return err
@@ -55,7 +56,7 @@ func CloneRepository(hostname, name, gitURL, _ string) error {
 func withAuthToken(hostname, gitURL string) (string, error) {
 	u, err := url.Parse(gitURL)
 	if err != nil {
-		return gitURL, nil
+		return gitURL, fmt.Errorf("invalid git URL %q: %w", gitURL, err)
 	}
 
 	switch hostname {
@@ -64,14 +65,18 @@ func withAuthToken(hostname, gitURL string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("github app auth unavailable: %w", err)
 		}
+
 		if provider != nil {
 			token, _, err := provider.Token(context.Background())
 			if err != nil {
 				return "", fmt.Errorf("github app token fetch failed: %w", err)
 			}
+
 			u.User = url.UserPassword("x-access-token", token)
+
 			return u.String(), nil
 		}
+
 		return "", errors.New("github app auth not configured for github.com")
 	case "gitlab.com":
 		if token := os.Getenv("GITLAB_TOKEN"); token != "" {

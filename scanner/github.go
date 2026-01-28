@@ -38,11 +38,13 @@ func NewGitHubScanner() Scanner {
 	if err != nil {
 		log.Fatalf("GitHub API auth: unable to configure GitHub App: %v", err)
 	}
+
 	if provider == nil {
 		log.Fatal("GitHub API auth: missing GitHub App env (GIT_OAUTH_CLIENTID/GIT_OAUTH_INSTALLATION_ID/GIT_OAUTH_SECRET)")
 	}
 
 	log.Infof("GitHub API auth: using GitHub App installation token")
+
 	httpClient = oauth2.NewClient(ctx, provider.TokenSource(ctx))
 
 	client := github.NewClient(httpClient)

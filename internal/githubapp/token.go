@@ -24,11 +24,11 @@ import (
 )
 
 const (
-	githubAPIBaseURL         = "https://api.github.com"
-	githubAPIVersionDefault  = "2022-11-28"
-	jwtExpiry                = 9 * time.Minute
-	jwtIssuedAtSkew          = 30 * time.Second
-	tokenRefreshThreshold    = 2 * time.Minute
+	githubAPIBaseURL        = "https://api.github.com"
+	githubAPIVersionDefault = "2022-11-28"
+	jwtExpiry               = 9 * time.Minute
+	jwtIssuedAtSkew         = 30 * time.Second
+	tokenRefreshThreshold   = 2 * time.Minute
 )
 
 type TokenProvider struct {
@@ -55,16 +55,16 @@ type tokenSource struct {
 var (
 	defaultProviderOnce sync.Once
 	defaultProvider     *TokenProvider
-	defaultProviderErr  error
+	errDefaultProvider  error
 )
 
 // DefaultProvider returns a cached provider built from env.
 func DefaultProvider() (*TokenProvider, error) {
 	defaultProviderOnce.Do(func() {
-		defaultProvider, defaultProviderErr = NewTokenProviderFromEnv()
+		defaultProvider, errDefaultProvider = NewTokenProviderFromEnv()
 	})
 
-	return defaultProvider, defaultProviderErr
+	return defaultProvider, errDefaultProvider
 }
 
 // HasEnv reports whether all GitHub App env vars are set.
@@ -109,20 +109,13 @@ func NewTokenProviderFromEnv() (*TokenProvider, error) {
 
 // TokenSource exposes the provider as oauth2.TokenSource.
 func (p *TokenProvider) TokenSource(ctx context.Context) oauth2.TokenSource {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
 	return &tokenSource{ctx: ctx, provider: p}
 }
 
 // Token returns a cached installation token, refreshes near expiry.
 func (p *TokenProvider) Token(ctx context.Context) (string, time.Time, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
 	p.mu.Lock()
+
 	if p.accessTok != "" && time.Until(p.expiresAt) > tokenRefreshThreshold {
 		token := p.accessTok
 		exp := p.expiresAt
@@ -130,6 +123,7 @@ func (p *TokenProvider) Token(ctx context.Context) (string, time.Time, error) {
 
 		return token, exp, nil
 	}
+
 	p.mu.Unlock()
 
 	return p.refreshToken(ctx)
@@ -216,6 +210,7 @@ func (p *TokenProvider) buildJWT(now time.Time) (string, error) {
 		"exp": now.Add(jwtExpiry).Unix(),
 		"iss": p.appID,
 	}
+
 	return signJWT(claims, p.privateKey)
 }
 
@@ -261,6 +256,7 @@ func encodeJWTPart(value interface{}) (string, error) {
 func parsePrivateKey(raw string) (*rsa.PrivateKey, error) {
 	secret := strings.ReplaceAll(strings.TrimSpace(raw), "\\n", "\n")
 	block, _ := pem.Decode([]byte(secret))
+
 	if block == nil {
 		return nil, errors.New("GIT_OAUTH_SECRET is not valid PEM data")
 	}
@@ -271,16 +267,19 @@ func parsePrivateKey(raw string) (*rsa.PrivateKey, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid RSA private key: %w", err)
 		}
+
 		return key, nil
 	case "PRIVATE KEY":
 		parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 		if err != nil {
 			return nil, fmt.Errorf("invalid PKCS8 private key: %w", err)
 		}
+
 		key, ok := parsed.(*rsa.PrivateKey)
 		if !ok {
 			return nil, errors.New("GIT_OAUTH_SECRET is not an RSA private key")
 		}
+
 		return key, nil
 	default:
 		return nil, fmt.Errorf("unsupported private key type %q", block.Type)
@@ -306,5 +305,6 @@ func githubAPIVersion() string {
 	if value == "" {
 		return githubAPIVersionDefault
 	}
+
 	return value
 }
