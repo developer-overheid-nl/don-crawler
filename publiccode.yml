@@ -2,7 +2,7 @@
 # metadata file that makes public software easily discoverable.
 # More info at https://github.com/publiccodeyml/publiccode.yml
 
-publiccodeYmlVersion: "0.4"
+publiccodeYmlVersion: "0.5"
 
 name: DON publiccode.yml crawler
 url: "https://github.com/developer-overheid-nl/don-crawler"
