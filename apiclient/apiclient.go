@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/developer-overheid-nl/don-crawler/common"
+	internalUrl "github.com/developer-overheid-nl/don-crawler/internal"
 	"github.com/hashicorp/go-retryablehttp"
-	"github.com/italia/publiccode-crawler/v4/common"
-	internalUrl "github.com/italia/publiccode-crawler/v4/internal"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )

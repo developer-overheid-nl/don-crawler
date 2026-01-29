@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	url "github.com/italia/publiccode-crawler/v4/internal"
+	url "github.com/developer-overheid-nl/don-crawler/internal"
 	"gopkg.in/yaml.v2"
 )
 

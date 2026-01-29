@@ -7,12 +7,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/developer-overheid-nl/don-crawler/common"
+	githubapp "github.com/developer-overheid-nl/don-crawler/internal/githubapp"
 	git "github.com/go-git/go-git/v5"
 	gitcfg "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
-	"github.com/italia/publiccode-crawler/v4/common"
-	githubapp "github.com/italia/publiccode-crawler/v4/internal/githubapp"
 	"github.com/spf13/viper"
 )
 

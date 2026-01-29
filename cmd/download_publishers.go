@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/italia/publiccode-crawler/v4/common"
-	ymlurl "github.com/italia/publiccode-crawler/v4/internal"
+	"github.com/developer-overheid-nl/don-crawler/common"
+	ymlurl "github.com/developer-overheid-nl/don-crawler/internal"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )

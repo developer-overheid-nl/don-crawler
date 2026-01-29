@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/developer-overheid-nl/don-crawler/common"
+	githubapp "github.com/developer-overheid-nl/don-crawler/internal/githubapp"
 	"github.com/google/go-github/v43/github"
-	"github.com/italia/publiccode-crawler/v4/common"
-	githubapp "github.com/italia/publiccode-crawler/v4/internal/githubapp"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
