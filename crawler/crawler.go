@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"github.com/alranel/go-vcsurl/v2"
+	"github.com/developer-overheid-nl/don-crawler/apiclient"
+	"github.com/developer-overheid-nl/don-crawler/common"
+	"github.com/developer-overheid-nl/don-crawler/git"
+	"github.com/developer-overheid-nl/don-crawler/scanner"
 	httpclient "github.com/italia/httpclient-lib-go"
-	"github.com/italia/publiccode-crawler/v4/apiclient"
-	"github.com/italia/publiccode-crawler/v4/common"
-	"github.com/italia/publiccode-crawler/v4/git"
-	"github.com/italia/publiccode-crawler/v4/scanner"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )

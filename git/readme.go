@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/italia/publiccode-crawler/v4/common"
+	"github.com/developer-overheid-nl/don-crawler/common"
 	"github.com/spf13/viper"
 )
 

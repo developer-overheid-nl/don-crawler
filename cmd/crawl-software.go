@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"github.com/italia/publiccode-crawler/v4/common"
-	"github.com/italia/publiccode-crawler/v4/crawler"
-	githubapp "github.com/italia/publiccode-crawler/v4/internal/githubapp"
+	"github.com/developer-overheid-nl/don-crawler/common"
+	"github.com/developer-overheid-nl/don-crawler/crawler"
+	githubapp "github.com/developer-overheid-nl/don-crawler/internal/githubapp"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

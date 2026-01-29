@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/italia/publiccode-crawler/v4/common"
+	"github.com/developer-overheid-nl/don-crawler/common"
 	log "github.com/sirupsen/logrus"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 )

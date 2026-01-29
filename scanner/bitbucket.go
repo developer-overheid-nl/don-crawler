@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/italia/publiccode-crawler/v4/common"
+	"github.com/developer-overheid-nl/don-crawler/common"
 	"github.com/ktrysmt/go-bitbucket"
 	log "github.com/sirupsen/logrus"
 )
