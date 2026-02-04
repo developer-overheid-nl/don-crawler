@@ -4,7 +4,7 @@ builds:
   binary: crawler
   main: ./main.go
   ldflags:
-    - -s -w -X module github.com/developer-overheid-nl/don-crawler/internal.VERSION={{.Version}} -X module github.com/developer-overheid-nl/don-crawler/internal.BuildTime={{.Date}}
+    - -s -w -X github.com/developer-overheid-nl/don-crawler/internal.VERSION={{.Version}} -X github.com/developer-overheid-nl/don-crawler/internal.BuildTime={{.Date}}
   env:
   - CGO_ENABLED=0
 archives:
