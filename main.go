@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/italia/publiccode-crawler/v4/cmd"
+	"github.com/developer-overheid-nl/don-crawler/cmd"
 	"github.com/joho/godotenv"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
