@@ -297,12 +297,9 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 
 	publiccodeURL := repositoryPubliccodeURL(repository)
 
-	var repoTitle, repoDesc *string
+	repoTitle, repoDesc := repoPostDetails(repository)
 	if hasPubliccode {
-		repoTitle = nil
 		repoDesc = nil
-	} else {
-		repoTitle, repoDesc = repoPostDetails(repository)
 	}
 
 	log.Debugf(
@@ -476,7 +473,12 @@ func (c *Crawler) ensurePubliccodeFile(repository *common.Repository, logEntries
 
 func titleFromRepositoryName(repository common.Repository) string {
 	if repository.Name == "" {
-		return ""
+		repoPath := strings.Trim(repository.CanonicalURL.Path, "/")
+		if repoPath == "" {
+			return ""
+		}
+
+		return strings.TrimSuffix(path.Base(repoPath), ".git")
 	}
 
 	return path.Base(repository.Name)
@@ -595,7 +597,7 @@ func repositoryPubliccodeURL(repository common.Repository) *string {
 func repoPostDetails(repository common.Repository) (*string, *string) {
 	title := repository.Title
 	if title == "" {
-		title = repository.Name
+		title = titleFromRepositoryName(repository)
 	}
 
 	desc := ensureDescription(repository)
