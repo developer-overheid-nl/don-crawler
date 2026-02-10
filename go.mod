@@ -1,6 +1,5 @@
 module github.com/developer-overheid-nl/don-crawler
 
-
 require (
 	github.com/alranel/go-vcsurl/v2 v2.0.3
 	github.com/go-git/go-git/v5 v5.16.4
@@ -14,7 +13,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	gitlab.com/gitlab-org/api/client-go v1.26.0
-	golang.org/x/oauth2 v0.34.0
+	golang.org/x/oauth2 v0.35.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
