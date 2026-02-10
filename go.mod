@@ -1,6 +1,5 @@
 module github.com/developer-overheid-nl/don-crawler
 
-
 require (
 	github.com/alranel/go-vcsurl/v2 v2.0.3
 	github.com/go-git/go-git/v5 v5.16.4
@@ -8,7 +7,7 @@ require (
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/italia/httpclient-lib-go v0.0.2
 	github.com/joho/godotenv v1.5.1
-	github.com/ktrysmt/go-bitbucket v0.9.88
+	github.com/ktrysmt/go-bitbucket v0.9.91
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
