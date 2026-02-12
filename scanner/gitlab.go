@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -18,7 +19,10 @@ import (
 
 type GitLabScanner struct{}
 
-const defaultGitLabAPIConcurrency = 4
+const (
+	defaultGitLabAPIConcurrency = 4
+	maxGitLabRateLimitRetries   = 5
+)
 
 var gitLabRateLimitFallbackWait = 15 * time.Second
 
@@ -57,11 +61,22 @@ func gitlabRateLimitWait(reset time.Time) time.Duration {
 }
 
 func gitlabCallWithRateLimitRetry[T any](
+	ctx context.Context,
 	operation string,
 	call func() (T, *gitlab.Response, error),
 ) (T, *gitlab.Response, error) {
-	for {
-		result, resp, err := gitlabWithAPISlot(call)
+	var result T
+	var resp *gitlab.Response
+	var err error
+	var lastReset time.Time
+
+	for attempt := 0; attempt <= maxGitLabRateLimitRetries; attempt++ {
+		// Check if context is cancelled
+		if ctx.Err() != nil {
+			return result, resp, ctx.Err()
+		}
+
+		result, resp, err = gitlabWithAPISlot(call)
 		if err == nil {
 			return result, resp, nil
 		}
@@ -71,9 +86,32 @@ func gitlabCallWithRateLimitRetry[T any](
 			return result, resp, err
 		}
 
+		// If we've exhausted retries, return RateLimitError
+		if attempt >= maxGitLabRateLimitRetries {
+			return result, resp, RateLimitError{
+				Provider: "GitLab",
+				Reset:    reset,
+			}
+		}
+
+		lastReset = reset
 		wait := gitlabRateLimitWait(reset)
-		log.Infof("GitLab API rate limited during %s; waiting %s before retry", operation, wait.Round(time.Second))
-		time.Sleep(wait)
+		log.Infof("GitLab API rate limited during %s; waiting %s before retry (attempt %d/%d)",
+			operation, wait.Round(time.Second), attempt+1, maxGitLabRateLimitRetries)
+
+		// Use context-aware sleep
+		select {
+		case <-ctx.Done():
+			return result, resp, ctx.Err()
+		case <-time.After(wait):
+			// Continue to next retry
+		}
+	}
+
+	// This should never be reached, but return RateLimitError as fallback
+	return result, resp, RateLimitError{
+		Provider: "GitLab",
+		Reset:    lastReset,
 	}
 }
 
@@ -91,7 +129,7 @@ func (scanner GitLabScanner) ScanGroupOfRepos(
 	if isGitlabGroup(url) {
 		groupName := strings.Trim(url.Path, "/")
 
-		group, _, err := gitlabCallWithRateLimitRetry("GetGroup", func() (*gitlab.Group, *gitlab.Response, error) {
+		group, _, err := gitlabCallWithRateLimitRetry(context.Background(), "GetGroup", func() (*gitlab.Group, *gitlab.Response, error) {
 			return git.Groups.GetGroup(groupName, &gitlab.GetGroupOptions{})
 		})
 		if err != nil {
@@ -108,6 +146,7 @@ func (scanner GitLabScanner) ScanGroupOfRepos(
 
 		for {
 			projects, res, err := gitlabCallWithRateLimitRetry(
+				context.Background(),
 				"ListProjects",
 				func() ([]*gitlab.Project, *gitlab.Response, error) {
 					return git.Projects.ListProjects(opts)
@@ -147,7 +186,7 @@ func (scanner GitLabScanner) ScanRepo(
 
 	projectName := strings.Trim(url.Path, "/")
 
-	prj, _, err := gitlabCallWithRateLimitRetry("GetProject", func() (*gitlab.Project, *gitlab.Response, error) {
+	prj, _, err := gitlabCallWithRateLimitRetry(context.Background(), "GetProject", func() (*gitlab.Project, *gitlab.Response, error) {
 		return git.Projects.GetProject(projectName, &gitlab.GetProjectOptions{})
 	})
 	if err != nil {
@@ -180,6 +219,7 @@ func lastCommitTimeGitLab(repoURL url.URL) (time.Time, error) {
 	}
 
 	commits, _, err := gitlabCallWithRateLimitRetry(
+		context.Background(),
 		"ListCommits",
 		func() ([]*gitlab.Commit, *gitlab.Response, error) {
 			return client.Commits.ListCommits(projectPath, opts)
@@ -293,6 +333,7 @@ func addGroupProjects(
 
 	for {
 		projects, res, err := gitlabCallWithRateLimitRetry(
+			context.Background(),
 			"ListGroupProjects",
 			func() ([]*gitlab.Project, *gitlab.Response, error) {
 				return client.Groups.ListGroupProjects(group.ID, opts)
@@ -322,6 +363,7 @@ func addGroupProjects(
 
 	for {
 		groups, res, err := gitlabCallWithRateLimitRetry(
+			context.Background(),
 			"ListDescendantGroups",
 			func() ([]*gitlab.Group, *gitlab.Response, error) {
 				return client.Groups.ListDescendantGroups(group.ID, dgOpts)
