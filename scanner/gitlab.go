@@ -46,6 +46,7 @@ func gitlabAPISemaphore() chan struct{} {
 func gitlabWithAPISlot[T any](call func() (T, *gitlab.Response, error)) (T, *gitlab.Response, error) {
 	sem := gitlabAPISemaphore()
 	sem <- struct{}{}
+
 	defer func() { <-sem }()
 
 	return call()
@@ -66,8 +67,11 @@ func gitlabCallWithRateLimitRetry[T any](
 	call func() (T, *gitlab.Response, error),
 ) (T, *gitlab.Response, error) {
 	var result T
+
 	var resp *gitlab.Response
+
 	var err error
+
 	var lastReset time.Time
 
 	for attempt := 0; attempt <= maxGitLabRateLimitRetries; attempt++ {
@@ -129,9 +133,13 @@ func (scanner GitLabScanner) ScanGroupOfRepos(
 	if isGitlabGroup(url) {
 		groupName := strings.Trim(url.Path, "/")
 
-		group, _, err := gitlabCallWithRateLimitRetry(context.Background(), "GetGroup", func() (*gitlab.Group, *gitlab.Response, error) {
-			return git.Groups.GetGroup(groupName, &gitlab.GetGroupOptions{})
-		})
+		group, _, err := gitlabCallWithRateLimitRetry(
+			context.Background(),
+			"GetGroup",
+			func() (*gitlab.Group, *gitlab.Response, error) {
+				return git.Groups.GetGroup(groupName, &gitlab.GetGroupOptions{})
+			},
+		)
 		if err != nil {
 			return fmt.Errorf("can't get GitLag group '%s': %w", groupName, err)
 		}
@@ -186,9 +194,13 @@ func (scanner GitLabScanner) ScanRepo(
 
 	projectName := strings.Trim(url.Path, "/")
 
-	prj, _, err := gitlabCallWithRateLimitRetry(context.Background(), "GetProject", func() (*gitlab.Project, *gitlab.Response, error) {
-		return git.Projects.GetProject(projectName, &gitlab.GetProjectOptions{})
-	})
+	prj, _, err := gitlabCallWithRateLimitRetry(
+		context.Background(),
+		"GetProject",
+		func() (*gitlab.Project, *gitlab.Response, error) {
+			return git.Projects.GetProject(projectName, &gitlab.GetProjectOptions{})
+		},
+	)
 	if err != nil {
 		return err
 	}
