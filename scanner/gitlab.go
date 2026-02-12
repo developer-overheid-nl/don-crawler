@@ -66,13 +66,11 @@ func gitlabCallWithRateLimitRetry[T any](
 	operation string,
 	call func() (T, *gitlab.Response, error),
 ) (T, *gitlab.Response, error) {
-	var result T
-
-	var resp *gitlab.Response
-
-	var err error
-
-	var lastReset time.Time
+	var (
+		result T
+		resp   *gitlab.Response
+		err    error
+	)
 
 	for attempt := 0; attempt <= maxGitLabRateLimitRetries; attempt++ {
 		// Check if context is cancelled
@@ -98,7 +96,6 @@ func gitlabCallWithRateLimitRetry[T any](
 			}
 		}
 
-		lastReset = reset
 		wait := gitlabRateLimitWait(reset)
 		log.Infof("GitLab API rate limited during %s; waiting %s before retry (attempt %d/%d)",
 			operation, wait.Round(time.Second), attempt+1, maxGitLabRateLimitRetries)
@@ -112,11 +109,8 @@ func gitlabCallWithRateLimitRetry[T any](
 		}
 	}
 
-	// This should never be reached, but return RateLimitError as fallback
-	return result, resp, RateLimitError{
-		Provider: "GitLab",
-		Reset:    lastReset,
-	}
+	// Unreachable: loop always returns via one of the conditions above
+	panic("gitlabCallWithRateLimitRetry: unexpected state")
 }
 
 // RegisterGitlabAPI register the crawler function for Gitlab API.
@@ -141,7 +135,7 @@ func (scanner GitLabScanner) ScanGroupOfRepos(
 			},
 		)
 		if err != nil {
-			return fmt.Errorf("can't get GitLag group '%s': %w", groupName, err)
+			return fmt.Errorf("can't get GitLab group '%s': %w", groupName, err)
 		}
 
 		if err = addGroupProjects(*group, publisher, repositories, git); err != nil {
