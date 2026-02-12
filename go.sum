@@ -128,8 +128,8 @@ github.com/tomnomnom/linkheader v0.0.0-20250811210735-e5fe3b51442e h1:tD38/4xg4n
 github.com/tomnomnom/linkheader v0.0.0-20250811210735-e5fe3b51442e/go.mod h1:krvJ5AY/MjdPkTeRgMYbIDhbbbVvnPQPzsIsDJO8xrY=
 github.com/xanzy/ssh-agent v0.3.3 h1:+/15pJfg/RsTxqYcX6fHqOXZwwMP+2VyYWJeWM2qQFM=
 github.com/xanzy/ssh-agent v0.3.3/go.mod h1:6dzNDKs0J9rVPHPhaGCukekBHKqfl+L3KghI1Bc68Uw=
-gitlab.com/gitlab-org/api/client-go v1.29.0 h1:3KnF6vENry/9v9eVrnLi2OfBV0m/WSrwh3RcxgH/hkA=
-gitlab.com/gitlab-org/api/client-go v1.29.0/go.mod h1:6i3EZtC6gKiTTmDwp+f6r/Yi9OY4AaYubl5B3yXEdHE=
+gitlab.com/gitlab-org/api/client-go v1.31.0 h1:GTsWZO4EeafjmH459DsoeLCE3NTB1gnM6JGrGFcolPE=
+gitlab.com/gitlab-org/api/client-go v1.31.0/go.mod h1:1LZ/6Q075HHVa1u9GBQjt8StFwFTRvfjo596slHmDbo=
 go.yaml.in/yaml/v3 v3.0.4 h1:tfq32ie2Jv2UxXFdLJdh3jXuOzWiL1fo0bu/FbuKpbc=
 go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=
 golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d/go.mod h1:IxCIyHEi3zRg3s0A5j5BB6A9Jmi73HwBIUl50j+osU4=
