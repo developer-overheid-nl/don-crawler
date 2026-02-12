@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/developer-overheid-nl/don-crawler/common"
@@ -17,8 +18,63 @@ import (
 
 type GitLabScanner struct{}
 
+const defaultGitLabAPIConcurrency = 4
+
+var gitLabRateLimitFallbackWait = 15 * time.Second
+
+var (
+	gitlabAPILimiterOnce sync.Once
+	gitlabAPILimiter     chan struct{}
+)
+
 func NewGitLabScanner() Scanner {
 	return GitLabScanner{}
+}
+
+func gitlabAPISemaphore() chan struct{} {
+	gitlabAPILimiterOnce.Do(func() {
+		gitlabAPILimiter = make(chan struct{}, defaultGitLabAPIConcurrency)
+	})
+
+	return gitlabAPILimiter
+}
+
+func gitlabWithAPISlot[T any](call func() (T, *gitlab.Response, error)) (T, *gitlab.Response, error) {
+	sem := gitlabAPISemaphore()
+	sem <- struct{}{}
+	defer func() { <-sem }()
+
+	return call()
+}
+
+func gitlabRateLimitWait(reset time.Time) time.Duration {
+	wait := time.Until(reset)
+	if wait <= 0 {
+		return gitLabRateLimitFallbackWait
+	}
+
+	return wait
+}
+
+func gitlabCallWithRateLimitRetry[T any](
+	operation string,
+	call func() (T, *gitlab.Response, error),
+) (T, *gitlab.Response, error) {
+	for {
+		result, resp, err := gitlabWithAPISlot(call)
+		if err == nil {
+			return result, resp, nil
+		}
+
+		reset, ok := gitlabRateLimitReset(resp, err)
+		if !ok {
+			return result, resp, err
+		}
+
+		wait := gitlabRateLimitWait(reset)
+		log.Infof("GitLab API rate limited during %s; waiting %s before retry", operation, wait.Round(time.Second))
+		time.Sleep(wait)
+	}
 }
 
 // RegisterGitlabAPI register the crawler function for Gitlab API.
@@ -35,7 +91,9 @@ func (scanner GitLabScanner) ScanGroupOfRepos(
 	if isGitlabGroup(url) {
 		groupName := strings.Trim(url.Path, "/")
 
-		group, _, err := git.Groups.GetGroup(groupName, &gitlab.GetGroupOptions{})
+		group, _, err := gitlabCallWithRateLimitRetry("GetGroup", func() (*gitlab.Group, *gitlab.Response, error) {
+			return git.Groups.GetGroup(groupName, &gitlab.GetGroupOptions{})
+		})
 		if err != nil {
 			return fmt.Errorf("can't get GitLag group '%s': %w", groupName, err)
 		}
@@ -49,7 +107,12 @@ func (scanner GitLabScanner) ScanGroupOfRepos(
 		}
 
 		for {
-			projects, res, err := git.Projects.ListProjects(opts)
+			projects, res, err := gitlabCallWithRateLimitRetry(
+				"ListProjects",
+				func() ([]*gitlab.Project, *gitlab.Response, error) {
+					return git.Projects.ListProjects(opts)
+				},
+			)
 			if err != nil {
 				return err
 			}
@@ -84,7 +147,9 @@ func (scanner GitLabScanner) ScanRepo(
 
 	projectName := strings.Trim(url.Path, "/")
 
-	prj, _, err := git.Projects.GetProject(projectName, &gitlab.GetProjectOptions{})
+	prj, _, err := gitlabCallWithRateLimitRetry("GetProject", func() (*gitlab.Project, *gitlab.Response, error) {
+		return git.Projects.GetProject(projectName, &gitlab.GetProjectOptions{})
+	})
 	if err != nil {
 		return err
 	}
@@ -114,12 +179,13 @@ func lastCommitTimeGitLab(repoURL url.URL) (time.Time, error) {
 		ListOptions: gitlab.ListOptions{Page: 1, PerPage: 1},
 	}
 
-	commits, resp, err := client.Commits.ListCommits(projectPath, opts)
+	commits, _, err := gitlabCallWithRateLimitRetry(
+		"ListCommits",
+		func() ([]*gitlab.Commit, *gitlab.Response, error) {
+			return client.Commits.ListCommits(projectPath, opts)
+		},
+	)
 	if err != nil {
-		if reset, ok := gitlabRateLimitReset(resp, err); ok {
-			return time.Time{}, RateLimitError{Provider: "gitlab", Reset: reset}
-		}
-
 		return time.Time{}, err
 	}
 
@@ -180,15 +246,23 @@ func newGitlabClient(u url.URL) (*gitlab.Client, error) {
 func gitlabRateLimitReset(resp *gitlab.Response, err error) (time.Time, bool) {
 	if resp != nil && resp.StatusCode == http.StatusTooManyRequests {
 		reset, ok := rateLimitResetFromHeaders(resp.Header)
+		if ok {
+			return reset, true
+		}
 
-		return reset, ok
+		return time.Time{}, true
 	}
 
 	var errResp *gitlab.ErrorResponse
 	if errors.As(err, &errResp) && errResp.HasStatusCode(http.StatusTooManyRequests) {
-		reset, ok := rateLimitResetFromHeaders(errResp.Response.Header)
+		if errResp.Response != nil {
+			reset, ok := rateLimitResetFromHeaders(errResp.Response.Header)
+			if ok {
+				return reset, true
+			}
+		}
 
-		return reset, ok
+		return time.Time{}, true
 	}
 
 	return time.Time{}, false
@@ -218,7 +292,12 @@ func addGroupProjects(
 	}
 
 	for {
-		projects, res, err := client.Groups.ListGroupProjects(group.ID, opts)
+		projects, res, err := gitlabCallWithRateLimitRetry(
+			"ListGroupProjects",
+			func() ([]*gitlab.Project, *gitlab.Response, error) {
+				return client.Groups.ListGroupProjects(group.ID, opts)
+			},
+		)
 		if err != nil {
 			return err
 		}
@@ -242,7 +321,12 @@ func addGroupProjects(
 	}
 
 	for {
-		groups, res, err := client.Groups.ListDescendantGroups(group.ID, dgOpts)
+		groups, res, err := gitlabCallWithRateLimitRetry(
+			"ListDescendantGroups",
+			func() ([]*gitlab.Group, *gitlab.Response, error) {
+				return client.Groups.ListDescendantGroups(group.ID, dgOpts)
+			},
+		)
 		if err != nil {
 			return err
 		}

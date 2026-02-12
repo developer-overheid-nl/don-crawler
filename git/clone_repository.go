@@ -98,6 +98,9 @@ func withAuthToken(hostname, _ string) (transport.AuthMethod, error) {
 				Password: token,
 			}, nil
 		}
+
+		// Fallback to anonymous auth for public gitlab.com repositories.
+		return nil, nil
 	default:
 		// No-op for other hosts.
 	}
