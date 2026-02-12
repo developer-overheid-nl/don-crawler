@@ -95,7 +95,7 @@ func (scanner GitLabScanner) ScanGroupOfRepos(
 			return git.Groups.GetGroup(groupName, &gitlab.GetGroupOptions{})
 		})
 		if err != nil {
-			return fmt.Errorf("can't get GitLag group '%s': %w", groupName, err)
+			return fmt.Errorf("can't get GitLab group '%s': %w", groupName, err)
 		}
 
 		if err = addGroupProjects(*group, publisher, repositories, git); err != nil {
