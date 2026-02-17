@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -351,40 +350,12 @@ func publiccodeGetStatus(resourceURL string, headers map[string]string) (int, ht
 	return resp.StatusCode, resp.Header, nil
 }
 
-func parseRateLimitReset(headers http.Header) (time.Time, bool) {
-	for _, key := range []string{"RateLimit-Reset", "X-RateLimit-Reset"} {
-		if raw := headers.Get(key); raw != "" {
-			if unix, err := strconv.ParseInt(raw, 10, 64); err == nil {
-				return time.Unix(unix, 0), true
-			}
-		}
-	}
-
-	return time.Time{}, false
-}
-
 func rateLimitWaitFromHeaders(headers http.Header) time.Duration {
 	if headers == nil {
 		return publiccodeRateLimitFallbackWait
 	}
 
-	if retryAfter := headers.Get("Retry-After"); retryAfter != "" {
-		if seconds, err := strconv.ParseInt(retryAfter, 10, 64); err == nil {
-			wait := time.Duration(seconds) * time.Second
-			if wait > 0 {
-				return wait
-			}
-		}
-
-		if when, err := http.ParseTime(retryAfter); err == nil {
-			wait := time.Until(when)
-			if wait > 0 {
-				return wait
-			}
-		}
-	}
-
-	if reset, ok := parseRateLimitReset(headers); ok {
+	if reset, ok := common.RateLimitResetFromHeaders(headers); ok {
 		wait := time.Until(reset)
 		if wait > 0 {
 			return wait
@@ -407,7 +378,7 @@ func isRateLimitedStatus(statusCode int, headers http.Header) bool {
 		return true
 	}
 
-	if _, ok := parseRateLimitReset(headers); ok {
+	if _, ok := common.RateLimitResetFromHeaders(headers); ok {
 		return true
 	}
 

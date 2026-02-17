@@ -3,9 +3,7 @@ package scanner
 import (
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -73,34 +71,4 @@ func lastCommitTimeWithRetry(provider string, fetch func() (time.Time, error)) (
 			rateLimitErr.Reset.Format(time.RFC3339))
 		time.Sleep(wait)
 	}
-}
-
-func rateLimitResetFromHeaders(headers http.Header) (time.Time, bool) {
-	if headers == nil {
-		return time.Time{}, false
-	}
-
-	if value := headers.Get("RateLimit-Reset"); value != "" {
-		if reset, err := strconv.ParseInt(value, 10, 64); err == nil {
-			return time.Unix(reset, 0), true
-		}
-	}
-
-	if value := headers.Get("X-RateLimit-Reset"); value != "" {
-		if reset, err := strconv.ParseInt(value, 10, 64); err == nil {
-			return time.Unix(reset, 0), true
-		}
-	}
-
-	if value := headers.Get("Retry-After"); value != "" {
-		if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
-			return time.Now().Add(time.Duration(seconds) * time.Second), true
-		}
-
-		if when, err := http.ParseTime(value); err == nil {
-			return when, true
-		}
-	}
-
-	return time.Time{}, false
 }
