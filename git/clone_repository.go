@@ -36,10 +36,6 @@ func CloneRepository(hostname, name, gitURL, _ string) error {
 		return err
 	}
 
-	if errors.Is(err, errAnonymousGitLabAuth) {
-		auth = nil
-	}
-
 	// If folder already exists it will do a fetch instead of a clone.
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		repo, err := git.PlainOpen(path)
