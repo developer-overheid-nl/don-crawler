@@ -1,6 +1,7 @@
 package crawler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -261,7 +262,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		}
 	}()
 
-	c.ensurePubliccodeFile(&repository, &logEntries)
+	c.ensurePubliccodeFile(context.Background(), &repository, &logEntries)
 	hasPubliccode := repository.FileRawURL != ""
 
 	if c.DryRun {
@@ -329,8 +330,8 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 	}
 }
 
-func publiccodeGetStatus(resourceURL string, headers map[string]string) (int, http.Header, error) {
-	req, err := http.NewRequest(http.MethodGet, resourceURL, nil)
+func publiccodeGetStatus(ctx context.Context, resourceURL string, headers map[string]string) (int, http.Header, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, resourceURL, nil)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -385,9 +386,13 @@ func isRateLimitedStatus(statusCode int, headers http.Header) bool {
 	return headers.Get("X-RateLimit-Remaining") == "0"
 }
 
-func publiccodeGetStatusWithRetry(resourceURL string, headers map[string]string) (int, error) {
+func publiccodeGetStatusWithRetry(ctx context.Context, resourceURL string, headers map[string]string) (int, error) {
 	for attempts := 0; ; attempts++ {
-		statusCode, responseHeaders, err := publiccodeGetStatus(resourceURL, headers)
+		if ctx.Err() != nil {
+			return 0, ctx.Err()
+		}
+
+		statusCode, responseHeaders, err := publiccodeGetStatus(ctx, resourceURL, headers)
 		if err != nil {
 			return 0, err
 		}
@@ -406,11 +411,17 @@ func publiccodeGetStatusWithRetry(resourceURL string, headers map[string]string)
 			statusCode,
 			wait.Round(time.Second),
 		)
-		time.Sleep(wait)
+
+		select {
+		case <-ctx.Done():
+			return statusCode, ctx.Err()
+		case <-time.After(wait):
+			// Continue to next retry.
+		}
 	}
 }
 
-func (c *Crawler) ensurePubliccodeFile(repository *common.Repository, logEntries *[]string) {
+func (c *Crawler) ensurePubliccodeFile(ctx context.Context, repository *common.Repository, logEntries *[]string) {
 	if repository.FileRawURL == "" {
 		*logEntries = append(*logEntries, fmt.Sprintf("[%s] publiccode.yml not found", repository.Name))
 		log.Warnf("[%s] publiccode.yml missing, will proceed without it", repository.Name)
@@ -418,7 +429,7 @@ func (c *Crawler) ensurePubliccodeFile(repository *common.Repository, logEntries
 		return
 	}
 
-	statusCode, err := publiccodeGetStatusWithRetry(repository.FileRawURL, repository.Headers)
+	statusCode, err := publiccodeGetStatusWithRetry(ctx, repository.FileRawURL, repository.Headers)
 
 	if statusCode == http.StatusOK && err == nil {
 		*logEntries = append(
