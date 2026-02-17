@@ -426,7 +426,7 @@ func publiccodeGetStatusWithRetry(resourceURL string, headers map[string]string)
 		}
 
 		if attempts >= publiccodeRateLimitMaxRetries {
-			return statusCode, fmt.Errorf("publiccode.yml request remained rate limited after %d retries", attempts+1)
+			return statusCode, fmt.Errorf("publiccode.yml request remained rate limited after %d attempts", attempts+1)
 		}
 
 		wait := rateLimitWaitFromHeaders(responseHeaders)
