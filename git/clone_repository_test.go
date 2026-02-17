@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"testing"
 
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
@@ -10,8 +11,8 @@ func TestWithAuthTokenGitLabWithoutTokenFallsBackToAnonymous(t *testing.T) {
 	t.Setenv("GITLAB_TOKEN", "")
 
 	auth, err := withAuthToken("gitlab.com", "https://gitlab.com/group/repo.git")
-	if err != nil {
-		t.Fatalf("withAuthToken returned error: %v", err)
+	if !errors.Is(err, errAnonymousGitLabAuth) {
+		t.Fatalf("withAuthToken error = %v, want %v", err, errAnonymousGitLabAuth)
 	}
 
 	if auth != nil {
