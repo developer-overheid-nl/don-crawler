@@ -28,6 +28,7 @@ const (
 	publiccodeRequestTimeout        = 60 * time.Second
 	publiccodeRateLimitMaxRetries   = 6
 	publiccodeRateLimitFallbackWait = 15 * time.Second
+	publiccodeRateLimitMaxWait      = 5 * time.Minute
 )
 
 var publiccodeHTTPClient = &http.Client{Timeout: publiccodeRequestTimeout}
@@ -337,7 +338,11 @@ func publiccodeGetStatus(ctx context.Context, resourceURL string, headers map[st
 	}
 
 	for k, v := range headers {
-		req.Header.Add(k, v)
+		if strings.TrimSpace(k) == "" || v == "" {
+			continue
+		}
+
+		req.Header.Set(k, v)
 	}
 
 	resp, err := publiccodeHTTPClient.Do(req)
@@ -346,6 +351,7 @@ func publiccodeGetStatus(ctx context.Context, resourceURL string, headers map[st
 	}
 	defer resp.Body.Close()
 
+	// Drain body so the underlying transport can reuse the TCP connection.
 	_, _ = io.Copy(io.Discard, resp.Body)
 
 	return resp.StatusCode, resp.Header, nil
@@ -358,6 +364,10 @@ func rateLimitWaitFromHeaders(headers http.Header) time.Duration {
 
 	if reset, ok := common.RateLimitResetFromHeaders(headers); ok {
 		wait := time.Until(reset)
+		if wait > publiccodeRateLimitMaxWait {
+			return publiccodeRateLimitMaxWait
+		}
+
 		if wait > 0 {
 			return wait
 		}

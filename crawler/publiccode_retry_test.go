@@ -68,3 +68,13 @@ func TestPubliccodeGetStatusWithRetryRespectsDeadlineDuringRateLimitWait(t *test
 		t.Fatalf("publiccodeGetStatusWithRetry performed %d requests, want 1", calls.Load())
 	}
 }
+
+func TestRateLimitWaitFromHeadersCapsLargeWait(t *testing.T) {
+	headers := make(http.Header)
+	headers.Set("Retry-After", "3600")
+
+	wait := rateLimitWaitFromHeaders(headers)
+	if wait != publiccodeRateLimitMaxWait {
+		t.Fatalf("rateLimitWaitFromHeaders wait = %s, want %s", wait, publiccodeRateLimitMaxWait)
+	}
+}
