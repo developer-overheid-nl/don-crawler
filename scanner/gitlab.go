@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/developer-overheid-nl/don-crawler/common"
@@ -17,8 +19,98 @@ import (
 
 type GitLabScanner struct{}
 
+const (
+	defaultGitLabAPIConcurrency = 4
+	maxGitLabRateLimitRetries   = 5
+)
+
+var gitLabRateLimitFallbackWait = 15 * time.Second
+
+var (
+	gitlabAPILimiterOnce sync.Once
+	gitlabAPILimiter     chan struct{}
+)
+
 func NewGitLabScanner() Scanner {
 	return GitLabScanner{}
+}
+
+func gitlabAPISemaphore() chan struct{} {
+	gitlabAPILimiterOnce.Do(func() {
+		gitlabAPILimiter = make(chan struct{}, defaultGitLabAPIConcurrency)
+	})
+
+	return gitlabAPILimiter
+}
+
+func gitlabWithAPISlot[T any](call func() (T, *gitlab.Response, error)) (T, *gitlab.Response, error) {
+	sem := gitlabAPISemaphore()
+	sem <- struct{}{}
+
+	defer func() { <-sem }()
+
+	return call()
+}
+
+func gitlabRateLimitWait(reset time.Time) time.Duration {
+	wait := time.Until(reset)
+	if wait <= 0 {
+		return gitLabRateLimitFallbackWait
+	}
+
+	return wait
+}
+
+func gitlabCallWithRateLimitRetry[T any](
+	ctx context.Context,
+	operation string,
+	call func() (T, *gitlab.Response, error),
+) (T, *gitlab.Response, error) {
+	var (
+		result T
+		resp   *gitlab.Response
+		err    error
+	)
+
+	for attempt := 0; attempt <= maxGitLabRateLimitRetries; attempt++ {
+		// Check if context is cancelled
+		if ctx.Err() != nil {
+			return result, resp, ctx.Err()
+		}
+
+		result, resp, err = gitlabWithAPISlot(call)
+		if err == nil {
+			return result, resp, nil
+		}
+
+		reset, ok := gitlabRateLimitReset(resp, err)
+		if !ok {
+			return result, resp, err
+		}
+
+		// If we've exhausted retries, return RateLimitError
+		if attempt >= maxGitLabRateLimitRetries {
+			return result, resp, RateLimitError{
+				Provider: "GitLab",
+				Reset:    reset,
+			}
+		}
+
+		wait := gitlabRateLimitWait(reset)
+		log.Infof("GitLab API rate limited during %s; waiting %s before retry (attempt %d/%d)",
+			operation, wait.Round(time.Second), attempt+1, maxGitLabRateLimitRetries)
+
+		// Use context-aware sleep
+		select {
+		case <-ctx.Done():
+			return result, resp, ctx.Err()
+		case <-time.After(wait):
+			// Continue to next retry
+		}
+	}
+
+	// Unreachable: loop always returns via one of the conditions above
+	panic("gitlabCallWithRateLimitRetry: unexpected state")
 }
 
 // RegisterGitlabAPI register the crawler function for Gitlab API.
@@ -35,9 +127,15 @@ func (scanner GitLabScanner) ScanGroupOfRepos(
 	if isGitlabGroup(url) {
 		groupName := strings.Trim(url.Path, "/")
 
-		group, _, err := git.Groups.GetGroup(groupName, &gitlab.GetGroupOptions{})
+		group, _, err := gitlabCallWithRateLimitRetry(
+			context.Background(),
+			"GetGroup",
+			func() (*gitlab.Group, *gitlab.Response, error) {
+				return git.Groups.GetGroup(groupName, &gitlab.GetGroupOptions{})
+			},
+		)
 		if err != nil {
-			return fmt.Errorf("can't get GitLag group '%s': %w", groupName, err)
+			return fmt.Errorf("can't get GitLab group '%s': %w", groupName, err)
 		}
 
 		if err = addGroupProjects(*group, publisher, repositories, git); err != nil {
@@ -49,7 +147,13 @@ func (scanner GitLabScanner) ScanGroupOfRepos(
 		}
 
 		for {
-			projects, res, err := git.Projects.ListProjects(opts)
+			projects, res, err := gitlabCallWithRateLimitRetry(
+				context.Background(),
+				"ListProjects",
+				func() ([]*gitlab.Project, *gitlab.Response, error) {
+					return git.Projects.ListProjects(opts)
+				},
+			)
 			if err != nil {
 				return err
 			}
@@ -84,7 +188,13 @@ func (scanner GitLabScanner) ScanRepo(
 
 	projectName := strings.Trim(url.Path, "/")
 
-	prj, _, err := git.Projects.GetProject(projectName, &gitlab.GetProjectOptions{})
+	prj, _, err := gitlabCallWithRateLimitRetry(
+		context.Background(),
+		"GetProject",
+		func() (*gitlab.Project, *gitlab.Response, error) {
+			return git.Projects.GetProject(projectName, &gitlab.GetProjectOptions{})
+		},
+	)
 	if err != nil {
 		return err
 	}
@@ -114,12 +224,14 @@ func lastCommitTimeGitLab(repoURL url.URL) (time.Time, error) {
 		ListOptions: gitlab.ListOptions{Page: 1, PerPage: 1},
 	}
 
-	commits, resp, err := client.Commits.ListCommits(projectPath, opts)
+	commits, _, err := gitlabCallWithRateLimitRetry(
+		context.Background(),
+		"ListCommits",
+		func() ([]*gitlab.Commit, *gitlab.Response, error) {
+			return client.Commits.ListCommits(projectPath, opts)
+		},
+	)
 	if err != nil {
-		if reset, ok := gitlabRateLimitReset(resp, err); ok {
-			return time.Time{}, RateLimitError{Provider: "gitlab", Reset: reset}
-		}
-
 		return time.Time{}, err
 	}
 
@@ -179,16 +291,24 @@ func newGitlabClient(u url.URL) (*gitlab.Client, error) {
 
 func gitlabRateLimitReset(resp *gitlab.Response, err error) (time.Time, bool) {
 	if resp != nil && resp.StatusCode == http.StatusTooManyRequests {
-		reset, ok := rateLimitResetFromHeaders(resp.Header)
+		reset, ok := common.RateLimitResetFromHeaders(resp.Header)
+		if ok {
+			return reset, true
+		}
 
-		return reset, ok
+		return time.Time{}, true
 	}
 
 	var errResp *gitlab.ErrorResponse
 	if errors.As(err, &errResp) && errResp.HasStatusCode(http.StatusTooManyRequests) {
-		reset, ok := rateLimitResetFromHeaders(errResp.Response.Header)
+		if errResp.Response != nil {
+			reset, ok := common.RateLimitResetFromHeaders(errResp.Response.Header)
+			if ok {
+				return reset, true
+			}
+		}
 
-		return reset, ok
+		return time.Time{}, true
 	}
 
 	return time.Time{}, false
@@ -218,7 +338,13 @@ func addGroupProjects(
 	}
 
 	for {
-		projects, res, err := client.Groups.ListGroupProjects(group.ID, opts)
+		projects, res, err := gitlabCallWithRateLimitRetry(
+			context.Background(),
+			"ListGroupProjects",
+			func() ([]*gitlab.Project, *gitlab.Response, error) {
+				return client.Groups.ListGroupProjects(group.ID, opts)
+			},
+		)
 		if err != nil {
 			return err
 		}
@@ -242,7 +368,13 @@ func addGroupProjects(
 	}
 
 	for {
-		groups, res, err := client.Groups.ListDescendantGroups(group.ID, dgOpts)
+		groups, res, err := gitlabCallWithRateLimitRetry(
+			context.Background(),
+			"ListDescendantGroups",
+			func() ([]*gitlab.Group, *gitlab.Response, error) {
+				return client.Groups.ListDescendantGroups(group.ID, dgOpts)
+			},
+		)
 		if err != nil {
 			return err
 		}

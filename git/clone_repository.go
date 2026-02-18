@@ -16,6 +16,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+var errAnonymousGitLabAuth = errors.New("anonymous gitlab auth")
+
 // CloneRepository clone the repository into DATADIR/repos/<hostname>/<vendor>/<repo>/gitClone.
 func CloneRepository(hostname, name, gitURL, _ string) error {
 	if name == "" {
@@ -30,7 +32,7 @@ func CloneRepository(hostname, name, gitURL, _ string) error {
 	path := filepath.Join(viper.GetString("DATADIR"), "repos", hostname, vendor, repo, "gitClone")
 
 	auth, err := withAuthToken(hostname, gitURL)
-	if err != nil {
+	if err != nil && !errors.Is(err, errAnonymousGitLabAuth) {
 		return err
 	}
 
@@ -98,6 +100,9 @@ func withAuthToken(hostname, _ string) (transport.AuthMethod, error) {
 				Password: token,
 			}, nil
 		}
+
+		// Fallback to anonymous auth for public gitlab.com repositories.
+		return nil, errAnonymousGitLabAuth
 	default:
 		// No-op for other hosts.
 	}

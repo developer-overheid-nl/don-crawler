@@ -5,7 +5,6 @@ require (
 	github.com/go-git/go-git/v5 v5.16.5
 	github.com/google/go-github/v43 v43.0.0
 	github.com/hashicorp/go-retryablehttp v0.7.8
-	github.com/italia/httpclient-lib-go v0.0.2
 	github.com/joho/godotenv v1.5.1
 	github.com/ktrysmt/go-bitbucket v0.9.91
 	github.com/sirupsen/logrus v1.9.4
@@ -48,7 +47,6 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	github.com/tomnomnom/linkheader v0.0.0-20250811210735-e5fe3b51442e // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.47.0 // indirect
