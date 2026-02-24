@@ -1,8 +1,10 @@
 package crawler
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -18,10 +20,18 @@ import (
 	"github.com/developer-overheid-nl/don-crawler/common"
 	"github.com/developer-overheid-nl/don-crawler/git"
 	"github.com/developer-overheid-nl/don-crawler/scanner"
-	httpclient "github.com/italia/httpclient-lib-go"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
+
+const (
+	publiccodeRequestTimeout        = 60 * time.Second
+	publiccodeRateLimitMaxRetries   = 6
+	publiccodeRateLimitFallbackWait = 15 * time.Second
+	publiccodeRateLimitMaxWait      = 5 * time.Minute
+)
+
+var publiccodeHTTPClient = &http.Client{Timeout: publiccodeRequestTimeout}
 
 // Crawler is a helper class representing a crawler.
 type Crawler struct {
@@ -253,7 +263,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		}
 	}()
 
-	c.ensurePubliccodeFile(&repository, &logEntries)
+	c.ensurePubliccodeFile(context.Background(), &repository, &logEntries)
 	hasPubliccode := repository.FileRawURL != ""
 
 	if c.DryRun {
@@ -321,7 +331,107 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 	}
 }
 
-func (c *Crawler) ensurePubliccodeFile(repository *common.Repository, logEntries *[]string) {
+func publiccodeGetStatus(ctx context.Context, resourceURL string, headers map[string]string) (int, http.Header, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, resourceURL, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	for k, v := range headers {
+		if strings.TrimSpace(k) == "" || v == "" {
+			continue
+		}
+
+		req.Header.Set(k, v)
+	}
+
+	resp, err := publiccodeHTTPClient.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+
+	// Drain body so the underlying transport can reuse the TCP connection.
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	return resp.StatusCode, resp.Header, nil
+}
+
+func rateLimitWaitFromHeaders(headers http.Header) time.Duration {
+	if headers == nil {
+		return publiccodeRateLimitFallbackWait
+	}
+
+	if reset, ok := common.RateLimitResetFromHeaders(headers); ok {
+		wait := time.Until(reset)
+		if wait > publiccodeRateLimitMaxWait {
+			return publiccodeRateLimitMaxWait
+		}
+
+		if wait > 0 {
+			return wait
+		}
+	}
+
+	return publiccodeRateLimitFallbackWait
+}
+
+func isRateLimitedStatus(statusCode int, headers http.Header) bool {
+	if statusCode == http.StatusTooManyRequests {
+		return true
+	}
+
+	if statusCode != http.StatusForbidden || headers == nil {
+		return false
+	}
+
+	if headers.Get("Retry-After") != "" {
+		return true
+	}
+
+	if _, ok := common.RateLimitResetFromHeaders(headers); ok {
+		return true
+	}
+
+	return headers.Get("X-RateLimit-Remaining") == "0"
+}
+
+func publiccodeGetStatusWithRetry(ctx context.Context, resourceURL string, headers map[string]string) (int, error) {
+	for attempts := 0; ; attempts++ {
+		if ctx.Err() != nil {
+			return 0, ctx.Err()
+		}
+
+		statusCode, responseHeaders, err := publiccodeGetStatus(ctx, resourceURL, headers)
+		if err != nil {
+			return 0, err
+		}
+
+		if !isRateLimitedStatus(statusCode, responseHeaders) {
+			return statusCode, nil
+		}
+
+		if attempts >= publiccodeRateLimitMaxRetries {
+			return statusCode, fmt.Errorf("publiccode.yml request remained rate limited after %d attempts", attempts+1)
+		}
+
+		wait := rateLimitWaitFromHeaders(responseHeaders)
+		log.Infof(
+			"publiccode.yml request rate limited (status: %d); waiting %s before retry",
+			statusCode,
+			wait.Round(time.Second),
+		)
+
+		select {
+		case <-ctx.Done():
+			return statusCode, ctx.Err()
+		case <-time.After(wait):
+			// Continue to next retry.
+		}
+	}
+}
+
+func (c *Crawler) ensurePubliccodeFile(ctx context.Context, repository *common.Repository, logEntries *[]string) {
 	if repository.FileRawURL == "" {
 		*logEntries = append(*logEntries, fmt.Sprintf("[%s] publiccode.yml not found", repository.Name))
 		log.Warnf("[%s] publiccode.yml missing, will proceed without it", repository.Name)
@@ -329,12 +439,7 @@ func (c *Crawler) ensurePubliccodeFile(repository *common.Repository, logEntries
 		return
 	}
 
-	resp, err := httpclient.GetURL(repository.FileRawURL, repository.Headers)
-	statusCode := 0
-
-	if err == nil {
-		statusCode = resp.Status.Code
-	}
+	statusCode, err := publiccodeGetStatusWithRetry(ctx, repository.FileRawURL, repository.Headers)
 
 	if statusCode == http.StatusOK && err == nil {
 		*logEntries = append(
@@ -347,6 +452,10 @@ func (c *Crawler) ensurePubliccodeFile(repository *common.Repository, logEntries
 		)
 
 		return
+	}
+
+	if err != nil {
+		log.Warnf("[%s] publiccode.yml request failed: %v", repository.Name, err)
 	}
 
 	*logEntries = append(
