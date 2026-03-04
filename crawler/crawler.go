@@ -632,7 +632,7 @@ func (c *Crawler) crawl() error {
 	// Get cpus number
 	numCPUs := runtime.NumCPU()
 
-	workerCount := int(math.Ceil(float64(numCPUs) * 0.25))
+	workerCount := int(math.Ceil(float64(numCPUs)))
 	if workerCount < 1 {
 		workerCount = 1
 	}
