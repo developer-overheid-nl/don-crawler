@@ -2,11 +2,12 @@
 
 ## Beschrijving
 
-developer.overheid.nl biedt een catalogus van Free and Open Source software
-voor publieke organisaties.
+Developer.overheid.nl biedt een catalogus van Open Source projecten van de
+overheid.
 
-`don-crawler` crawlt repositories van publishers uit de developer.overheid.nl
-bronnen en zoekt daarin specifiek naar `publiccode.yml` bestanden.
+`don-crawler` crawlt de repositories van deze open source projecten door een
+lijst van publishers af te lopen. Hij zoekt daarin specifiek naar
+`publiccode.yml` bestanden.
 
 ## Achtergrond
 
@@ -18,13 +19,14 @@ voor developer.overheid.nl.
 
 We gebruiken de publiccode.yml-standaard om metadata over open source projecten
 op een consistente en machine-leesbare manier vast te leggen. De standaard heeft
-twee doelen: projecten vindbaar maken en projectinformatie centraliseren.
-Het bestand hoort in de root van de repository.
+twee doelen: projecten vindbaar maken en projectinformatie centraliseren. Het
+bestand hoort in de root van de repository.
 
 Voordelen die dit oplevert:
 
 - metadata staat in de codebase en is daarmee git-platform agnostisch;
-- metadata is machine-leesbaar en kan automatisch door catalogi worden ingelezen;
+- metadata is machine-leesbaar en kan automatisch door catalogi worden
+  ingelezen;
 - projecten zijn eenvoudiger te vinden (o.a. door bots die repos afstruinen op
   `publiccode.yml` in de root).
 
@@ -39,7 +41,8 @@ Belangrijkste variabelen:
 
 - `API_BASEURL` (basis-URL van de API)
 - `API_X_API_KEY` (optioneel, indien nodig)
-- `GIT_OAUTH_CLIENTID`, `GIT_OAUTH_INSTALLATION_ID`, `GIT_OAUTH_SECRET` (GitHub App)
+- `GIT_OAUTH_CLIENTID`, `GIT_OAUTH_INSTALLATION_ID`, `GIT_OAUTH_SECRET` (GitHub
+  App)
 - `GITLAB_TOKEN` (optioneel, voor GitLab)
 - `DATADIR` (default `./data`)
 - `ACTIVITY_DAYS` (default `60`)
@@ -58,6 +61,7 @@ Op dit moment ondersteunen we alleen het `crawl` command.
 ```console
 publiccode-crawler crawl
 ```
+
 ## Authors
 
 De oorspronkelijke crawler is ontwikkeld door Developers Italia. Deze repository
