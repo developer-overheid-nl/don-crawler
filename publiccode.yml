@@ -1,32 +1,35 @@
-# This repository adheres to the publiccode.yml standard by including this
-# metadata file that makes public software easily discoverable.
-# More info at https://github.com/publiccodeyml/publiccode.yml
-
 publiccodeYmlVersion: "0.5"
 
 name: DON publiccode.yml crawler
 url: "https://github.com/developer-overheid-nl/don-crawler"
-softwareType: standalone/command-line
-releaseDate: "2025-12-01"
+softwareType: standalone/backend
+developmentStatus: stable
+
 platforms:
-  - web
+  - linux
 
 categories:
   - data-collection
-developmentStatus: beta
 
 description:
   nl:
-    shortDescription: Crawler die publiccode.yml bestanden ophaalt voor developer.overheid.nl
+    shortDescription: >-
+      Crawler die publiccode.yml bestanden ophaalt voor developer.overheid.nl
+
+    longDescription: |
+      De DON publiccode.yml crawler haalt automatisch publiccode.yml
+      bestanden op uit publieke Git-repositories van de Nederlandse
+      overheid. De gevonden metadata wordt verwerkt en beschikbaar
+      gesteld via developer.overheid.nl, zodat open source projecten
+      van de overheid beter vindbaar en herbruikbaar worden.
 
 legal:
   license: EUPL-1.2
-  mainCopyrightOwner: Stichting Geonovum
-  repoOwner: Stichting Geonovum
+  mainCopyrightOwner: Geonovum
 
 intendedAudience:
   countries:
-    - nl
+    - NL
   scope:
     - government
 
