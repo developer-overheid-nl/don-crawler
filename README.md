@@ -35,18 +35,31 @@ https://developer.overheid.nl/kennisbank/open-source/standaarden/publiccode-yml
 
 ## Configuratie
 
-Configuratie gaat via environment variables (optioneel uit een `.env` bestand).
+Configuratie gaat via environment variables. Een lokaal `.env` bestand wordt
+automatisch geladen als het aanwezig is.
 
-Belangrijkste variabelen:
+De crawler gebruikt op dit moment de volgende variabelen:
 
-- `API_BASEURL` (basis-URL van de API)
-- `API_X_API_KEY` (optioneel, indien nodig)
-- `GIT_OAUTH_CLIENTID`, `GIT_OAUTH_INSTALLATION_ID`, `GIT_OAUTH_SECRET` (GitHub
-  App)
-- `GITLAB_TOKEN` (optioneel, voor GitLab)
-- `DATADIR` (default `./data`)
-- `ACTIVITY_DAYS` (default `60`)
-- `LOG_FILE` (optioneel)
+| Variabele | Verplicht | Doel |
+| --- | --- | --- |
+| `API_BASEURL` | ja, voor API-calls | Basis-URL van de DON API. |
+| `API_X_API_KEY` | ja, voor API-calls | Waarde voor de `x-api-key` header bij API-requests. |
+| `KEYCLOAK_BASE_URL` | ja, voor API-auth | Basis-URL van Keycloak. |
+| `KEYCLOAK_REALM` | ja, voor API-auth | Keycloak realm voor token-opvraag. |
+| `AUTH_CLIENT_ID` | ja, voor API-auth | Client ID voor de Keycloak `client_credentials` flow. |
+| `AUTH_CLIENT_SECRET` | ja, voor API-auth | Client secret voor de Keycloak `client_credentials` flow. |
+| `GIT_OAUTH_CLIENTID` | ja, voor GitHub scanning | GitHub App ID. |
+| `GIT_OAUTH_INSTALLATION_ID` | ja, voor GitHub scanning | GitHub App installation ID. |
+| `GIT_OAUTH_SECRET` | ja, voor GitHub scanning | GitHub App private key in PEM-formaat. |
+| `DATADIR` | nee | Directory voor lokale data en clones. Default: `/app/data`. |
+| `ACTIVITY_DAYS` | nee | Aantal dagen voor activity/vitality-bepaling. Default: `60`. |
+
+Opmerkingen:
+
+- `GIT_OAUTH_SECRET` mag een PEM private key zijn met echte newlines of met
+  escaped `\n`.
+- Zonder Keycloak-variabelen kan de crawler geen bearer token ophalen voor
+  authenticated API-requests.
 
 ## Build en run
 
