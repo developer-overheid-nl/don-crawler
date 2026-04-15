@@ -59,6 +59,7 @@ func CalculateRepoActivity(repository common.Repository, days int) (float64, map
 	}
 
 	now := time.Now()
+
 	activity, err := collectActivitySnapshot(r, days, now)
 	if err != nil {
 		log.Error(err)
@@ -81,6 +82,7 @@ func CalculateRepoActivity(repository common.Repository, days int) (float64, map
 	}
 
 	vitalityIndex := make(map[int]float64, days)
+
 	var total float64
 
 	for i := range days {
@@ -142,11 +144,7 @@ func collectTagStats(r *git.Repository, activity *models.ActivitySnapshot) error
 			return nil
 		}
 
-		tagObject, err := r.CommitObject(t.Hash())
-		if err != nil {
-			return nil
-		}
-
+		tagObject, _ := r.CommitObject(t.Hash())
 		addTagCommitToActivity(activity, tagObject)
 
 		return nil
@@ -273,20 +271,6 @@ func rangePoints(data RangesData, name string, value float64) float64 {
 	}
 
 	return 0
-}
-
-// meanActivity return the mean of all the points.
-func meanActivity(points map[int]float64) float64 {
-	if len(points) == 0 {
-		return 0
-	}
-
-	var total float64
-	for _, point := range points {
-		total += point
-	}
-
-	return total / float64(len(points))
 }
 
 // LastCommitTime returns the commit time of HEAD.
