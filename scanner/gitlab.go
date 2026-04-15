@@ -423,6 +423,7 @@ func addProject(
 			FileRawURL:   rawURL,
 			URL:          *originalURL,
 			CanonicalURL: *canonicalURL,
+			IsFork:       gitlabProjectIsFork(&project),
 			GitBranch:    project.DefaultBranch,
 			CreatedAt:    gitlabTime(project.CreatedAt),
 			UpdatedAt:    gitlabUpdatedAt(project),
@@ -431,4 +432,8 @@ func addProject(
 	}
 
 	return nil
+}
+
+func gitlabProjectIsFork(project *gitlab.Project) bool {
+	return project != nil && project.ForkedFromProject != nil
 }

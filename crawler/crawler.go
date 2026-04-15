@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +27,9 @@ const (
 	publiccodeRateLimitMaxRetries   = 6
 	publiccodeRateLimitFallbackWait = 15 * time.Second
 	publiccodeRateLimitMaxWait      = 5 * time.Minute
+	repositoryWorkerCount           = 2
+	publisherWorkerCount            = 2
+	repositoryChannelSize           = 100
 )
 
 var publiccodeHTTPClient = &http.Client{Timeout: publiccodeRequestTimeout}
@@ -81,8 +83,6 @@ func (r *repoLockMap) lock(key string) func() {
 func NewCrawler(dryRun bool) *Crawler {
 	var c Crawler
 
-	const channelSize = 1000
-
 	c.DryRun = dryRun
 
 	datadir := viper.GetString("DATADIR")
@@ -91,7 +91,7 @@ func NewCrawler(dryRun bool) *Crawler {
 	}
 
 	// Initiate a channel of repositories.
-	c.repositories = make(chan common.Repository, channelSize)
+	c.repositories = make(chan common.Repository, repositoryChannelSize)
 
 	c.gitHubScanner = scanner.NewGitHubScanner()
 	c.gitLabScanner = scanner.NewGitLabScanner()
@@ -161,14 +161,31 @@ func (c *Crawler) CrawlPublishers(publishers []common.Publisher) error {
 
 	log.Infof("Scanning %d publishers (%d repositories)", len(publishers), reposNum)
 
-	// Process every item in publishers.
-	for _, publisher := range publishers {
+	publisherJobs := make(chan common.Publisher)
+
+	for i := range publisherWorkerCount {
 		c.publishersWg.Add(1)
 
-		go c.ScanPublisher(publisher)
+		go func(id int) {
+			defer c.publishersWg.Done()
+
+			log.Debugf("Starting ScanPublisher() goroutine (#%d)", id)
+
+			for publisher := range publisherJobs {
+				c.ScanPublisher(publisher)
+			}
+		}(i)
 	}
 
-	// Close the repositories channel when all the publisher goroutines are done
+	go func() {
+		for _, publisher := range publishers {
+			publisherJobs <- publisher
+		}
+
+		close(publisherJobs)
+	}()
+
+	// Close the repositories channel when all the publisher workers are done.
 	go func() {
 		c.publishersWg.Wait()
 		close(c.repositories)
@@ -181,8 +198,6 @@ func (c *Crawler) CrawlPublishers(publishers []common.Publisher) error {
 // with a publiccode.yml to the repositories channel.
 func (c *Crawler) ScanPublisher(publisher common.Publisher) {
 	log.Infof("Processing publisher: %s", publisher.Name)
-
-	defer c.publishersWg.Done()
 
 	var err error
 
@@ -320,6 +335,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		repoTitle,
 		repoDesc,
 		publiccodeURL,
+		&repository.IsFork,
 		orgURI(repository.Publisher),
 		repository.CreatedAt,
 		time.Now(),
@@ -628,18 +644,10 @@ func (c *Crawler) crawl() error {
 
 	defer c.publishersWg.Wait()
 
-	// Get cpus number
-	numCPUs := runtime.NumCPU()
-
-	workerCount := numCPUs
-	if workerCount < 1 {
-		workerCount = 1
-	}
-
-	log.Debugf("CPUs #: %d (workers: %d)", numCPUs, workerCount)
+	log.Debugf("Repository workers: %d", repositoryWorkerCount)
 
 	// Process the repositories in order to retrieve the files.
-	for i := range workerCount {
+	for i := range repositoryWorkerCount {
 		c.repositoriesWg.Add(1)
 
 		go func(id int) {

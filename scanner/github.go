@@ -245,6 +245,7 @@ Retry:
 		FileRawURL:   fileRawURL,
 		URL:          url,
 		CanonicalURL: *canonicalURL,
+		IsFork:       githubRepositoryIsFork(repo),
 		GitBranch:    *repo.DefaultBranch,
 		CreatedAt:    repo.GetCreatedAt().Time,
 		UpdatedAt:    repo.GetUpdatedAt().Time,
@@ -367,4 +368,8 @@ func isDotGitHubRepoName(repoName string) bool {
 	repoNameNormalized := strings.TrimSuffix(repoName, ".git")
 
 	return strings.EqualFold(repoNameNormalized, ".github")
+}
+
+func githubRepositoryIsFork(repo *github.Repository) bool {
+	return repo != nil && repo.GetFork()
 }
