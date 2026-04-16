@@ -87,6 +87,7 @@ func (scanner BitBucketScanner) ScanGroupOfRepos(
 				FileRawURL:   fmt.Sprintf("https://bitbucket.org/%s/%s/raw/%s/publiccode.yml", owner, r.Slug, r.Mainbranch.Name),
 				URL:          *u,
 				CanonicalURL: *u,
+				IsFork:       bitbucketRepositoryIsFork(&r),
 				GitBranch:    r.Mainbranch.Name,
 				CreatedAt:    bitbucketTime(r.CreatedOnTime),
 				UpdatedAt:    bitbucketTime(r.UpdatedOnTime),
@@ -147,6 +148,7 @@ func (scanner BitBucketScanner) ScanRepo(
 			FileRawURL:   fmt.Sprintf("https://bitbucket.org/%s/%s/raw/%s/publiccode.yml", owner, slug, repo.Mainbranch.Name),
 			URL:          url,
 			CanonicalURL: *canonicalURL,
+			IsFork:       bitbucketRepositoryIsFork(repo),
 			GitBranch:    repo.Mainbranch.Name,
 			CreatedAt:    bitbucketTime(repo.CreatedOnTime),
 			UpdatedAt:    bitbucketTime(repo.UpdatedOnTime),
@@ -161,4 +163,8 @@ func (scanner BitBucketScanner) ScanRepo(
 func (scanner BitBucketScanner) LastCommitTimeFromAPI(_ url.URL) (time.Time, error) {
 	// implement Bitbucket last commit lookup when we have Bitbucket repos.
 	return time.Time{}, errors.New("bitbucket last commit lookup not implemented")
+}
+
+func bitbucketRepositoryIsFork(repo *bitbucket.Repository) bool {
+	return repo != nil && repo.Parent != nil
 }

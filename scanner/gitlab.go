@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 	"strings"
 	"sync"
@@ -278,15 +277,13 @@ func gitlabUpdatedAt(project gitlab.Project) time.Time {
 }
 
 func newGitlabClient(u url.URL) (*gitlab.Client, error) {
-	token := os.Getenv("GITLAB_TOKEN")
-
 	if u.Scheme == "" || u.Host == "" {
-		return gitlab.NewClient(token)
+		return gitlab.NewAuthSourceClient(gitlab.Unauthenticated{})
 	}
 
 	base := fmt.Sprintf("%s://%s/api/v4", u.Scheme, u.Host)
 
-	return gitlab.NewClient(token, gitlab.WithBaseURL(base))
+	return gitlab.NewAuthSourceClient(gitlab.Unauthenticated{}, gitlab.WithBaseURL(base))
 }
 
 func gitlabRateLimitReset(resp *gitlab.Response, err error) (time.Time, bool) {
@@ -423,6 +420,7 @@ func addProject(
 			FileRawURL:   rawURL,
 			URL:          *originalURL,
 			CanonicalURL: *canonicalURL,
+			IsFork:       gitlabProjectIsFork(&project),
 			GitBranch:    project.DefaultBranch,
 			CreatedAt:    gitlabTime(project.CreatedAt),
 			UpdatedAt:    gitlabUpdatedAt(project),
@@ -431,4 +429,8 @@ func addProject(
 	}
 
 	return nil
+}
+
+func gitlabProjectIsFork(project *gitlab.Project) bool {
+	return project != nil && project.ForkedFromProject != nil
 }

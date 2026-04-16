@@ -32,6 +32,7 @@ var downloadPublishersCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(2),
 	Run: func(_ *cobra.Command, args []string) {
 		var publishers []common.Publisher
+
 		if _, err := os.Stat(args[1]); err == nil {
 			data, err := os.ReadFile(args[1])
 			if err != nil {
@@ -46,12 +47,14 @@ var downloadPublishersCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 		defer resp.Body.Close()
+
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		var repolist repolistType
+
 		err = yaml.Unmarshal(bodyBytes, &repolist)
 		if err != nil {
 			log.Fatal(err)
@@ -86,10 +89,12 @@ var downloadPublishersCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 		defer f.Close()
+
 		data, err := yaml.Marshal(publishers)
 		if err != nil {
 			log.Fatal(err)
 		}
+
 		if _, err = f.Write(data); err != nil {
 			log.Fatal(err)
 		}

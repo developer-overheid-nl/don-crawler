@@ -43,6 +43,7 @@ type OrganisationSummary struct {
 type Repository struct {
 	ID            string    `json:"id"`
 	RepositoryURL string    `json:"repositoryUrl"`
+	IsFork        bool      `json:"isFork"`
 	Name          *string   `json:"name"`
 	Description   *string   `json:"description"`
 	PublicCodeURL *string   `json:"publicCodeUrl"`
@@ -56,6 +57,7 @@ type repositoryRequest struct {
 	Name             *string   `json:"name,omitempty"`
 	ShortDescription *string   `json:"shortDescription,omitempty"`
 	PublicCodeURL    *string   `json:"publicCodeUrl,omitempty"`
+	IsFork           *bool     `json:"isFork,omitempty"`
 	OrganisationURI  string    `json:"organisationUri"`
 	CreatedAt        time.Time `json:"createdAt"`
 	LastCrawledAt    time.Time `json:"lastCrawledAt"`
@@ -266,6 +268,7 @@ func (clt APIClient) PostRepository(
 	name *string,
 	description *string,
 	publiccodeYml *string,
+	isFork *bool,
 	organisationURI string,
 	createdAt time.Time,
 	lastCrawledAt time.Time,
@@ -276,6 +279,7 @@ func (clt APIClient) PostRepository(
 		Name:             name,
 		ShortDescription: description,
 		PublicCodeURL:    publiccodeYml,
+		IsFork:           isFork,
 		OrganisationURI:  organisationURI,
 		CreatedAt:        createdAt,
 		LastCrawledAt:    lastCrawledAt,
@@ -287,12 +291,13 @@ func (clt APIClient) PostRepository(
 
 	endpoint := joinPath(clt.baseURL, "/repositories")
 	log.Debugf(
-		"POST %s (repoUrl=%s name=%s descPresent=%t publiccode=%t orgUri=%s)",
+		"POST %s (repoUrl=%s name=%s descPresent=%t publiccode=%t isFork=%t orgUri=%s)",
 		endpoint,
 		repoURL,
 		deref(name),
 		description != nil,
 		publiccodeYml != nil,
+		derefBool(isFork),
 		organisationURI,
 	)
 
@@ -401,4 +406,12 @@ func deref(s *string) string {
 	}
 
 	return *s
+}
+
+func derefBool(v *bool) bool {
+	if v == nil {
+		return false
+	}
+
+	return *v
 }
