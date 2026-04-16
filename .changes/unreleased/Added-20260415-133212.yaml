@@ -1,3 +1,0 @@
-kind: Added
-body: De crawler stuurt voortaan fork-informatie mee naar het register en gebruikt GitLab anoniem zonder tokenconfiguratie.
-time: 2026-04-15T13:32:12.901287+02:00
