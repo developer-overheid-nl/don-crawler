@@ -92,7 +92,6 @@ func withAuthToken(hostname, _ string) (transport.AuthMethod, error) {
 
 		return nil, errors.New("github app auth not configured for github.com")
 	case "gitlab.com":
-
 		//nolint
 		return nil, nil
 	default:
