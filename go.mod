@@ -2,7 +2,7 @@ module github.com/developer-overheid-nl/don-crawler
 
 require (
 	github.com/alranel/go-vcsurl/v2 v2.1.1
-	github.com/go-git/go-git/v5 v5.17.2
+	github.com/go-git/go-git/v5 v5.18.0
 	github.com/google/go-github/v43 v43.0.0
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/joho/godotenv v1.5.1
