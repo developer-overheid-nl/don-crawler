@@ -11,13 +11,14 @@ import (
 	githubapp "github.com/developer-overheid-nl/don-crawler/internal/githubapp"
 	git "github.com/go-git/go-git/v5"
 	gitcfg "github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/spf13/viper"
 )
 
-// CloneRepository clone the repository into DATADIR/repos/<hostname>/<vendor>/<repo>/gitClone.
-func CloneRepository(hostname, name, gitURL, _ string) error {
+// CloneRepository clones the repository into DATADIR/repos/<hostname>/<vendor>/<repo>/gitClone.
+func CloneRepository(hostname, name, gitURL, branch string) error {
 	if name == "" {
 		return errors.New("cannot save a file without name")
 	}
@@ -28,6 +29,8 @@ func CloneRepository(hostname, name, gitURL, _ string) error {
 
 	vendor, repo := common.SplitFullName(name)
 	path := filepath.Join(viper.GetString("DATADIR"), "repos", hostname, vendor, repo, "gitClone")
+	depth := cloneDepth()
+	refName, refSpecs := branchRef(branch)
 
 	auth, err := withAuthToken(hostname, gitURL)
 	if err != nil {
@@ -45,8 +48,9 @@ func CloneRepository(hostname, name, gitURL, _ string) error {
 			RemoteName: git.DefaultRemoteName,
 			RemoteURL:  gitURL,
 			Auth:       auth,
-			RefSpecs:   []gitcfg.RefSpec{"+refs/*:refs/*"},
-			Tags:       git.AllTags,
+			RefSpecs:   refSpecs,
+			Depth:      depth,
+			Tags:       git.TagFollowing,
 			Force:      true,
 			Prune:      true,
 		}
@@ -58,16 +62,39 @@ func CloneRepository(hostname, name, gitURL, _ string) error {
 	}
 
 	_, err = git.PlainClone(path, true, &git.CloneOptions{
-		URL:    gitURL,
-		Auth:   auth,
-		Mirror: true,
-		Tags:   git.AllTags,
+		URL:           gitURL,
+		Auth:          auth,
+		ReferenceName: refName,
+		SingleBranch:  branch != "",
+		Depth:         depth,
+		Tags:          git.TagFollowing,
 	})
 	if err != nil {
 		return fmt.Errorf("cannot git clone the repository: %w", err)
 	}
 
 	return err
+}
+
+func cloneDepth() int {
+	days := viper.GetInt("ACTIVITY_DAYS")
+	if days < 1 {
+		return 1
+	}
+
+	return days
+}
+
+func branchRef(branch string) (plumbing.ReferenceName, []gitcfg.RefSpec) {
+	if branch == "" {
+		return "", nil
+	}
+
+	ref := plumbing.NewBranchReferenceName(branch)
+
+	return ref, []gitcfg.RefSpec{
+		gitcfg.RefSpec(fmt.Sprintf("+%s:%s", ref, ref)),
+	}
 }
 
 func withAuthToken(hostname, _ string) (transport.AuthMethod, error) {

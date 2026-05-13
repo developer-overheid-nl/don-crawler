@@ -52,7 +52,9 @@ De crawler gebruikt op dit moment de volgende variabelen:
 | `GIT_OAUTH_INSTALLATION_ID` | ja, voor GitHub scanning | GitHub App installation ID. |
 | `GIT_OAUTH_SECRET` | ja, voor GitHub scanning | GitHub App private key in PEM-formaat. |
 | `DATADIR` | nee | Directory voor lokale data en clones. Default: `/app/data`. |
-| `ACTIVITY_DAYS` | nee | Aantal dagen voor activity/vitality-bepaling. Default: `60`. |
+| `ACTIVITY_DAYS` | nee | Aantal dagen voor activity/vitality-bepaling en shallow clone-depth. Default: `60`. |
+| `LOG_FILE` | nee | Bestandspad voor lokale file logging. Wordt alleen gebruikt als `ENABLE_FILE_LOG=true`. |
+| `ENABLE_FILE_LOG` | nee | Zet op `true` om ook naar `LOG_FILE` te schrijven. Default: `false`. |
 
 Opmerkingen:
 
@@ -60,6 +62,9 @@ Opmerkingen:
   escaped `\n`.
 - Zonder Keycloak-variabelen kan de crawler geen bearer token ophalen voor
   authenticated API-requests.
+- De crawler clone/fetcht alleen de default branch met een shallow depth op
+  basis van `ACTIVITY_DAYS`; dit beperkt memory-, CPU- en diskgebruik bij grote
+  repositories.
 
 ## Build en run
 

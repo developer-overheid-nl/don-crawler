@@ -113,7 +113,12 @@ func collectActivitySnapshot(r *git.Repository, days int, now time.Time) (*model
 		return nil, err
 	}
 
-	cIter, err := r.Log(&git.LogOptions{From: ref.Hash()})
+	since := now.AddDate(0, 0, -days)
+	cIter, err := r.Log(&git.LogOptions{
+		From:  ref.Hash(),
+		Order: git.LogOrderCommitterTime,
+		Since: &since,
+	})
 	if err != nil {
 		return nil, err
 	}

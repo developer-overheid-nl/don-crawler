@@ -27,7 +27,7 @@ const (
 	publiccodeRateLimitMaxRetries   = 6
 	publiccodeRateLimitFallbackWait = 15 * time.Second
 	publiccodeRateLimitMaxWait      = 5 * time.Minute
-	repositoryWorkerCount           = 2
+	repositoryWorkerCount           = 1
 	publisherWorkerCount            = 2
 	repositoryChannelSize           = 100
 )
@@ -537,7 +537,7 @@ func (c *Crawler) cloneAndLogActivity(
 
 	unlock := c.repoLocks.lock(repoLockKey(repository))
 
-	err := git.CloneRepository(repository.URL.Host, repository.Name, cloneURL, c.Index)
+	err := git.CloneRepository(repository.URL.Host, repository.Name, cloneURL, repository.GitBranch)
 
 	unlock()
 
