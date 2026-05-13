@@ -40,21 +40,21 @@ automatisch geladen als het aanwezig is.
 
 De crawler gebruikt op dit moment de volgende variabelen:
 
-| Variabele | Verplicht | Doel |
-| --- | --- | --- |
-| `API_BASEURL` | ja, voor API-calls | Basis-URL van de DON API. |
-| `API_X_API_KEY` | ja, voor API-calls | Waarde voor de `x-api-key` header bij API-requests. |
-| `KEYCLOAK_BASE_URL` | ja, voor API-auth | Basis-URL van Keycloak. |
-| `KEYCLOAK_REALM` | ja, voor API-auth | Keycloak realm voor token-opvraag. |
-| `AUTH_CLIENT_ID` | ja, voor API-auth | Client ID voor de Keycloak `client_credentials` flow. |
-| `AUTH_CLIENT_SECRET` | ja, voor API-auth | Client secret voor de Keycloak `client_credentials` flow. |
-| `GIT_OAUTH_CLIENTID` | ja, voor GitHub scanning | GitHub App ID. |
-| `GIT_OAUTH_INSTALLATION_ID` | ja, voor GitHub scanning | GitHub App installation ID. |
-| `GIT_OAUTH_SECRET` | ja, voor GitHub scanning | GitHub App private key in PEM-formaat. |
-| `DATADIR` | nee | Directory voor lokale data en clones. Default: `/app/data`. |
-| `ACTIVITY_DAYS` | nee | Aantal dagen voor activity/vitality-bepaling en shallow clone-depth. Default: `60`. |
-| `LOG_FILE` | nee | Bestandspad voor lokale file logging. Wordt alleen gebruikt als `ENABLE_FILE_LOG=true`. |
-| `ENABLE_FILE_LOG` | nee | Zet op `true` om ook naar `LOG_FILE` te schrijven. Default: `false`. |
+| Variabele                   | Verplicht                 | Doel                                                                                 |
+| --------------------------- | ------------------------- | ------------------------------------------------------------------------------------ |
+| `API_BASEURL`               | ja, voor API-calls        | Basis-URL van de DON API.                                                            |
+| `API_X_API_KEY`             | ja, voor API-calls        | Waarde voor de `x-api-key` header bij API-requests.                                  |
+| `KEYCLOAK_BASE_URL`         | ja, voor API-auth         | Basis-URL van Keycloak.                                                              |
+| `KEYCLOAK_REALM`            | ja, voor API-auth         | Keycloak realm voor token-opvraag.                                                   |
+| `AUTH_CLIENT_ID`            | ja, voor API-auth         | Client ID voor de Keycloak `client_credentials` flow.                                |
+| `AUTH_CLIENT_SECRET`        | ja, voor API-auth         | Client secret voor de Keycloak `client_credentials` flow.                            |
+| `GIT_OAUTH_CLIENTID`        | ja, voor GitHub scanning  | GitHub App ID.                                                                       |
+| `GIT_OAUTH_INSTALLATION_ID` | ja, voor GitHub scanning  | GitHub App installation ID.                                                          |
+| `GIT_OAUTH_SECRET`          | ja, voor GitHub scanning  | GitHub App private key in PEM-formaat.                                               |
+| `DATADIR`                   | nee                       | Directory voor lokale data en clones. Default: `/app/data`.                         |
+| `ACTIVITY_DAYS`             | nee                       | Aantal dagen voor activity/vitality-bepaling en shallow clone-depth. Default: `60`.  |
+| `LOG_FILE`                  | nee                       | Lokaal logbestand; alleen actief met `ENABLE_FILE_LOG=true`.                         |
+| `ENABLE_FILE_LOG`           | nee                       | Zet op `true` om ook naar `LOG_FILE` te schrijven. Default: `false`.                 |
 
 Opmerkingen:
 
