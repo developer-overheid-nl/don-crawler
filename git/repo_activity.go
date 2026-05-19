@@ -101,17 +101,15 @@ func CalculateRepoActivity(repository common.Repository, days int) (float64, map
 }
 
 func collectActivitySnapshot(repoPath string, days int, now time.Time) (*models.ActivitySnapshot, error) {
-	since := now.AddDate(0, 0, -days)
-
-	//nolint:gosec // repoPath is derived from DATADIR plus repository owner/name path segments, and no shell is used.
-	out, err := exec.Command(
+	cmd := exec.Command(
 		"git",
-		"-C", repoPath,
 		"log",
-		"--since", since.Format(time.RFC3339),
 		"--pretty=format:%aI%x00%ae%x00%P",
 		"HEAD",
-	).Output()
+	)
+	cmd.Dir = repoPath
+
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
