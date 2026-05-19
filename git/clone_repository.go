@@ -1,19 +1,13 @@
 package git
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/developer-overheid-nl/don-crawler/common"
-	githubapp "github.com/developer-overheid-nl/don-crawler/internal/githubapp"
-	git "github.com/go-git/go-git/v5"
-	gitcfg "github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/transport"
-	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/spf13/viper"
 )
 
@@ -28,52 +22,47 @@ func CloneRepository(hostname, name, gitURL, branch string) error {
 	}
 
 	vendor, repo := common.SplitFullName(name)
+
 	path := filepath.Join(viper.GetString("DATADIR"), "repos", hostname, vendor, repo, "gitClone")
-	depth := cloneDepth()
-	refName, refSpecs := branchRef(branch)
+	if err := os.RemoveAll(path); err != nil {
+		return fmt.Errorf("cannot remove existing git repository: %w", err)
+	}
 
-	auth, err := withAuthToken(hostname, gitURL)
+	args := []string{
+		"clone",
+		"--bare",
+		"--depth", fmt.Sprint(cloneDepth()),
+		"--no-tags",
+	}
+
+	if branch != "" {
+		args = append(args, "--single-branch", "--branch", branch)
+	}
+
+	args = append(args, gitURL, path)
+
+	out, err := exec.Command("git", args...).CombinedOutput()
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot git clone the repository: %s: %w", out, err)
 	}
 
-	// If folder already exists it will do a fetch instead of a clone.
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		repo, err := git.PlainOpen(path)
-		if err != nil {
-			return fmt.Errorf("cannot open git repository: %w", err)
-		}
+	return nil
+}
 
-		fetchOpts := &git.FetchOptions{
-			RemoteName: git.DefaultRemoteName,
-			RemoteURL:  gitURL,
-			Auth:       auth,
-			RefSpecs:   refSpecs,
-			Depth:      depth,
-			Tags:       git.TagFollowing,
-			Force:      true,
-			Prune:      true,
-		}
-		if err := repo.Fetch(fetchOpts); err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
-			return fmt.Errorf("cannot fetch the repository: %w", err)
-		}
-
-		return nil
+// RemoveRepository removes the local clone for a repository.
+func RemoveRepository(hostname, name string) error {
+	if name == "" {
+		return errors.New("cannot remove a repository without name")
 	}
 
-	_, err = git.PlainClone(path, true, &git.CloneOptions{
-		URL:           gitURL,
-		Auth:          auth,
-		ReferenceName: refName,
-		SingleBranch:  branch != "",
-		Depth:         depth,
-		Tags:          git.TagFollowing,
-	})
-	if err != nil {
-		return fmt.Errorf("cannot git clone the repository: %w", err)
+	vendor, repo := common.SplitFullName(name)
+	path := filepath.Join(viper.GetString("DATADIR"), "repos", hostname, vendor, repo, "gitClone")
+
+	if err := os.RemoveAll(path); err != nil {
+		return fmt.Errorf("cannot remove git repository: %w", err)
 	}
 
-	return err
+	return nil
 }
 
 func cloneDepth() int {
@@ -83,47 +72,4 @@ func cloneDepth() int {
 	}
 
 	return days
-}
-
-func branchRef(branch string) (plumbing.ReferenceName, []gitcfg.RefSpec) {
-	if branch == "" {
-		return "", nil
-	}
-
-	ref := plumbing.NewBranchReferenceName(branch)
-
-	return ref, []gitcfg.RefSpec{
-		gitcfg.RefSpec(fmt.Sprintf("+%s:%s", ref, ref)),
-	}
-}
-
-func withAuthToken(hostname, _ string) (transport.AuthMethod, error) {
-	switch hostname {
-	case "github.com":
-		provider, err := githubapp.DefaultProvider()
-		if err != nil {
-			return nil, fmt.Errorf("github app auth unavailable: %w", err)
-		}
-
-		if provider != nil {
-			token, _, err := provider.Token(context.Background())
-			if err != nil {
-				return nil, fmt.Errorf("github app token fetch failed: %w", err)
-			}
-
-			return &githttp.BasicAuth{
-				Username: "x-access-token",
-				Password: token,
-			}, nil
-		}
-
-		return nil, errors.New("github app auth not configured for github.com")
-	case "gitlab.com":
-		//nolint
-		return nil, nil
-	default:
-		// No-op for other hosts.
-	}
-
-	return nil, fmt.Errorf("no auth method available for host %s", hostname)
 }

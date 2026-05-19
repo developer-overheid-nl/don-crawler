@@ -53,6 +53,7 @@ De crawler gebruikt op dit moment de volgende variabelen:
 | `GIT_OAUTH_SECRET`          | ja, voor GitHub scanning  | GitHub App private key in PEM-formaat.                                               |
 | `DATADIR`                   | nee                       | Directory voor lokale data en clones. Default: `/app/data`.                         |
 | `ACTIVITY_DAYS`             | nee                       | Aantal dagen voor activity/vitality-bepaling en shallow clone-depth. Default: `60`.  |
+| `CLEANUP_GIT_CLONES`        | nee                       | Verwijder lokale clones na verwerking. Default: `true`.                              |
 | `LOG_FILE`                  | nee                       | Lokaal logbestand; alleen actief met `ENABLE_FILE_LOG=true`.                         |
 | `ENABLE_FILE_LOG`           | nee                       | Zet op `true` om ook naar `LOG_FILE` te schrijven. Default: `false`.                 |
 
@@ -65,6 +66,8 @@ Opmerkingen:
 - De crawler clone/fetcht alleen de default branch met een shallow depth op
   basis van `ACTIVITY_DAYS`; dit beperkt memory-, CPU- en diskgebruik bij grote
   repositories.
+- Git-operaties lopen via de native `git` CLI in plaats van `go-git`, zodat
+  grote packfiles niet in de Go heap worden geladen.
 
 ## Build en run
 

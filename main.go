@@ -30,6 +30,7 @@ func main() {
 	viper.SetDefault("DATADIR", "/app/data")
 	viper.SetDefault("ACTIVITY_DAYS", 60)
 	viper.SetDefault("ENABLE_FILE_LOG", false)
+	viper.SetDefault("CLEANUP_GIT_CLONES", true)
 
 	if err := viper.ReadInConfig(); err != nil {
 		var notFoundError viper.ConfigFileNotFoundError

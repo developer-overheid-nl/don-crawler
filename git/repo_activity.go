@@ -1,16 +1,16 @@
 package git
 
 import (
+	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/developer-overheid-nl/don-crawler/common"
 	"github.com/developer-overheid-nl/don-crawler/models"
-	git "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	yaml "gopkg.in/yaml.v2"
@@ -51,23 +51,16 @@ func CalculateRepoActivity(repository common.Repository, days int) (float64, map
 		return 0, nil, err
 	}
 
-	r, err := git.PlainOpen(path)
-	if err != nil {
-		log.Error(err)
-
-		return 0, nil, err
-	}
-
 	now := time.Now()
 
-	activity, err := collectActivitySnapshot(r, days, now)
+	activity, err := collectActivitySnapshot(path, days, now)
 	if err != nil {
 		log.Error(err)
 
 		return 0, nil, err
 	}
 
-	if err := collectTagStats(r, activity); err != nil {
+	if err := collectTagStats(path, activity); err != nil {
 		log.Error(err)
 	}
 
@@ -107,54 +100,44 @@ func CalculateRepoActivity(repository common.Repository, days int) (float64, map
 	return float64(int(vitalityIndexTotal)), vitalityIndex, nil
 }
 
-func collectActivitySnapshot(r *git.Repository, days int, now time.Time) (*models.ActivitySnapshot, error) {
-	ref, err := r.Head()
-	if err != nil {
-		return nil, err
-	}
-
+func collectActivitySnapshot(repoPath string, days int, now time.Time) (*models.ActivitySnapshot, error) {
 	since := now.AddDate(0, 0, -days)
 
-	cIter, err := r.Log(&git.LogOptions{
-		From:  ref.Hash(),
-		Order: git.LogOrderCommitterTime,
-		Since: &since,
-	})
+	//nolint:gosec // repoPath is derived from DATADIR plus repository owner/name path segments, and no shell is used.
+	out, err := exec.Command(
+		"git",
+		"-C", repoPath,
+		"log",
+		"--since", since.Format(time.RFC3339),
+		"--pretty=format:%aI%x00%ae%x00%P",
+		"HEAD",
+	).Output()
 	if err != nil {
 		return nil, err
 	}
-	defer cIter.Close()
 
 	activity := newActivitySnapshot(days, now)
 
-	if err := cIter.ForEach(func(c *object.Commit) error {
-		addCommitToActivity(activity, c)
-
-		return nil
-	}); err != nil {
+	if err := parseCommitLog(activity, out); err != nil {
 		return nil, err
 	}
 
 	return activity, nil
 }
 
-func collectTagStats(r *git.Repository, activity *models.ActivitySnapshot) error {
-	tagrefs, err := r.Tags()
+func collectTagStats(repoPath string, activity *models.ActivitySnapshot) error {
+	out, err := exec.Command(
+		"git",
+		"-C", repoPath,
+		"for-each-ref",
+		"--format=%(creatordate:iso-strict)",
+		"refs/tags",
+	).Output()
 	if err != nil {
 		return err
 	}
-	defer tagrefs.Close()
 
-	return tagrefs.ForEach(func(t *plumbing.Reference) error {
-		if t.Hash().IsZero() {
-			return nil
-		}
-
-		tagObject, _ := r.CommitObject(t.Hash())
-		addTagCommitToActivity(activity, tagObject)
-
-		return nil
-	})
+	return parseTagDates(activity, out)
 }
 
 func newActivitySnapshot(days int, now time.Time) *models.ActivitySnapshot {
@@ -175,19 +158,13 @@ func newActivitySnapshot(days int, now time.Time) *models.ActivitySnapshot {
 	return activity
 }
 
-func addCommitToActivity(activity *models.ActivitySnapshot, c *object.Commit) {
-	if c == nil {
-		return
-	}
-
-	commitTime := c.Author.When
-
+func addCommitToActivity(activity *models.ActivitySnapshot, commitTime time.Time, email string, parentCount int) {
 	if !activity.HasCommits || commitTime.Before(activity.OldestCommit) {
 		activity.OldestCommit = commitTime
 		activity.HasCommits = true
 	}
 
-	if email := c.Author.Email; email != "" {
+	if email != "" {
 		if firstCommit, ok := activity.FirstCommitByEmail[email]; !ok || commitTime.Before(firstCommit) {
 			activity.FirstCommitByEmail[email] = commitTime
 		}
@@ -195,20 +172,65 @@ func addCommitToActivity(activity *models.ActivitySnapshot, c *object.Commit) {
 
 	if idx, ok := activity.DayIndex[calendarDayFromTime(commitTime)]; ok {
 		activity.DailyActivity[idx]++
-		if c.NumParents() > 1 {
+		if parentCount > 1 {
 			activity.DailyActivity[idx]++
 		}
 	}
 }
 
-func addTagCommitToActivity(activity *models.ActivitySnapshot, c *object.Commit) {
-	if c == nil {
-		return
-	}
-
-	if idx, ok := activity.DayIndex[calendarDayFromTime(c.Author.When)]; ok {
+func addTagCommitToActivity(activity *models.ActivitySnapshot, tagTime time.Time) {
+	if idx, ok := activity.DayIndex[calendarDayFromTime(tagTime)]; ok {
 		activity.DailyTags[idx]++
 	}
+}
+
+func parseCommitLog(activity *models.ActivitySnapshot, out []byte) error {
+	for _, line := range bytes.Split(bytes.TrimSpace(out), []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+
+		parts := bytes.SplitN(line, []byte{0}, 3)
+		if len(parts) != 3 {
+			return errors.New("unexpected git log output")
+		}
+
+		commitTime, err := time.Parse(time.RFC3339, string(parts[0]))
+		if err != nil {
+			return err
+		}
+
+		email := string(parts[1])
+		parentCount := parentCount(string(parts[2]))
+		addCommitToActivity(activity, commitTime, email, parentCount)
+	}
+
+	return nil
+}
+
+func parseTagDates(activity *models.ActivitySnapshot, out []byte) error {
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+
+		tagTime, err := time.Parse(time.RFC3339, line)
+		if err != nil {
+			return err
+		}
+
+		addTagCommitToActivity(activity, tagTime)
+	}
+
+	return nil
+}
+
+func parentCount(parents string) int {
+	if parents == "" {
+		return 0
+	}
+
+	return len(strings.Fields(parents))
 }
 
 func userCommunityBefore(activity *models.ActivitySnapshot, day int) float64 {
@@ -292,20 +314,10 @@ func LastCommitTime(repository common.Repository) (time.Time, error) {
 		return time.Time{}, err
 	}
 
-	r, err := git.PlainOpen(path)
+	out, err := exec.Command("git", "-C", path, "log", "-1", "--format=%aI", "HEAD").Output()
 	if err != nil {
 		return time.Time{}, err
 	}
 
-	ref, err := r.Head()
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	commit, err := r.CommitObject(ref.Hash())
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	return commit.Author.When, nil
+	return time.Parse(time.RFC3339, strings.TrimSpace(string(out)))
 }
