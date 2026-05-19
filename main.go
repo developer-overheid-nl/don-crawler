@@ -29,6 +29,8 @@ func main() {
 
 	viper.SetDefault("DATADIR", "/app/data")
 	viper.SetDefault("ACTIVITY_DAYS", 60)
+	viper.SetDefault("ENABLE_FILE_LOG", false)
+	viper.SetDefault("CLEANUP_GIT_CLONES", true)
 
 	if err := viper.ReadInConfig(); err != nil {
 		var notFoundError viper.ConfigFileNotFoundError
@@ -37,7 +39,7 @@ func main() {
 		}
 	}
 
-	if logPath := viper.GetString("LOG_FILE"); logPath != "" {
+	if logPath := viper.GetString("LOG_FILE"); logPath != "" && viper.GetBool("ENABLE_FILE_LOG") {
 		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {
 			log.Fatalf("unable to open log file %s: %v", logPath, err)

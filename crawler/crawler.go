@@ -27,7 +27,7 @@ const (
 	publiccodeRateLimitMaxRetries   = 6
 	publiccodeRateLimitFallbackWait = 15 * time.Second
 	publiccodeRateLimitMaxWait      = 5 * time.Minute
-	repositoryWorkerCount           = 2
+	repositoryWorkerCount           = 1
 	publisherWorkerCount            = 2
 	repositoryChannelSize           = 100
 )
@@ -290,6 +290,14 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 
 	cloneErr := c.cloneAndLogActivity(repository, cloneURL, &logEntries)
 
+	if viper.GetBool("CLEANUP_GIT_CLONES") {
+		defer func() {
+			if err := git.RemoveRepository(repository.URL.Host, repository.Name); err != nil {
+				log.Warnf("[%s] failed to remove local clone: %v", repository.Name, err)
+			}
+		}()
+	}
+
 	if !hasPubliccode {
 		if repository.Description == "" && cloneErr == nil {
 			readmeContents, readmeErr := git.ReadReadme(repository)
@@ -537,15 +545,20 @@ func (c *Crawler) cloneAndLogActivity(
 
 	unlock := c.repoLocks.lock(repoLockKey(repository))
 
-	err := git.CloneRepository(repository.URL.Host, repository.Name, cloneURL, c.Index)
+	log.Infof("[%s] cloning %s", repository.Name, cloneURL)
+	err := git.CloneRepository(repository.URL.Host, repository.Name, cloneURL, repository.GitBranch)
 
 	unlock()
 
 	if err != nil {
 		*logEntries = append(*logEntries, fmt.Sprintf("[%s] error while cloning: %v\n", repository.Name, err))
+
+		return err
 	}
 
 	activityDays := activityDays()
+
+	log.Infof("[%s] calculating activity for the last %d days", repository.Name, activityDays)
 
 	activityIndex, _, err := git.CalculateRepoActivity(repository, activityDays)
 	if err != nil {

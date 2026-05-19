@@ -40,19 +40,22 @@ automatisch geladen als het aanwezig is.
 
 De crawler gebruikt op dit moment de volgende variabelen:
 
-| Variabele | Verplicht | Doel |
-| --- | --- | --- |
-| `API_BASEURL` | ja, voor API-calls | Basis-URL van de DON API. |
-| `API_X_API_KEY` | ja, voor API-calls | Waarde voor de `x-api-key` header bij API-requests. |
-| `KEYCLOAK_BASE_URL` | ja, voor API-auth | Basis-URL van Keycloak. |
-| `KEYCLOAK_REALM` | ja, voor API-auth | Keycloak realm voor token-opvraag. |
-| `AUTH_CLIENT_ID` | ja, voor API-auth | Client ID voor de Keycloak `client_credentials` flow. |
-| `AUTH_CLIENT_SECRET` | ja, voor API-auth | Client secret voor de Keycloak `client_credentials` flow. |
-| `GIT_OAUTH_CLIENTID` | ja, voor GitHub scanning | GitHub App ID. |
-| `GIT_OAUTH_INSTALLATION_ID` | ja, voor GitHub scanning | GitHub App installation ID. |
-| `GIT_OAUTH_SECRET` | ja, voor GitHub scanning | GitHub App private key in PEM-formaat. |
-| `DATADIR` | nee | Directory voor lokale data en clones. Default: `/app/data`. |
-| `ACTIVITY_DAYS` | nee | Aantal dagen voor activity/vitality-bepaling. Default: `60`. |
+| Variabele                   | Verplicht                 | Doel                                                                                 |
+| --------------------------- | ------------------------- | ------------------------------------------------------------------------------------ |
+| `API_BASEURL`               | ja, voor API-calls        | Basis-URL van de DON API.                                                            |
+| `API_X_API_KEY`             | ja, voor API-calls        | Waarde voor de `x-api-key` header bij API-requests.                                  |
+| `KEYCLOAK_BASE_URL`         | ja, voor API-auth         | Basis-URL van Keycloak.                                                              |
+| `KEYCLOAK_REALM`            | ja, voor API-auth         | Keycloak realm voor token-opvraag.                                                   |
+| `AUTH_CLIENT_ID`            | ja, voor API-auth         | Client ID voor de Keycloak `client_credentials` flow.                                |
+| `AUTH_CLIENT_SECRET`        | ja, voor API-auth         | Client secret voor de Keycloak `client_credentials` flow.                            |
+| `GIT_OAUTH_CLIENTID`        | ja, voor GitHub scanning  | GitHub App ID.                                                                       |
+| `GIT_OAUTH_INSTALLATION_ID` | ja, voor GitHub scanning  | GitHub App installation ID.                                                          |
+| `GIT_OAUTH_SECRET`          | ja, voor GitHub scanning  | GitHub App private key in PEM-formaat.                                               |
+| `DATADIR`                   | nee                       | Directory voor lokale data en clones. Default: `/app/data`.                         |
+| `ACTIVITY_DAYS`             | nee                       | Aantal dagen voor activity/vitality-bepaling en shallow clone-depth. Default: `60`.  |
+| `CLEANUP_GIT_CLONES`        | nee                       | Verwijder lokale clones na verwerking. Default: `true`.                              |
+| `LOG_FILE`                  | nee                       | Lokaal logbestand; alleen actief met `ENABLE_FILE_LOG=true`.                         |
+| `ENABLE_FILE_LOG`           | nee                       | Zet op `true` om ook naar `LOG_FILE` te schrijven. Default: `false`.                 |
 
 Opmerkingen:
 
@@ -60,6 +63,11 @@ Opmerkingen:
   escaped `\n`.
 - Zonder Keycloak-variabelen kan de crawler geen bearer token ophalen voor
   authenticated API-requests.
+- De crawler clone/fetcht alleen de default branch met een shallow depth op
+  basis van `ACTIVITY_DAYS`; dit beperkt memory-, CPU- en diskgebruik bij grote
+  repositories.
+- Git-operaties lopen via de native `git` CLI in plaats van `go-git`, zodat
+  grote packfiles niet in de Go heap worden geladen.
 
 ## Build en run
 

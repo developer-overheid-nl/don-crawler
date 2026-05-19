@@ -195,8 +195,8 @@ Retry:
 		return fmt.Errorf("can't get repo %s: %w", url.String(), err)
 	}
 
-	if *repo.Private || *repo.Archived {
-		return fmt.Errorf("skipping private or archived repo %s", *repo.FullName)
+	if repo.GetPrivate() {
+		return fmt.Errorf("skipping private repo %s", repo.GetFullName())
 	}
 
 	file, _, resp, err := scanner.client.Repositories.GetContents(scanner.ctx, orgName, repoName, "publiccode.yml", nil)
