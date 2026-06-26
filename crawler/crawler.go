@@ -329,11 +329,12 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 	}
 
 	log.Debugf(
-		"[%s] posting repository (title=%q desc=%t publiccode=%t)",
+		"[%s] posting repository (title=%q desc=%t publiccode=%t archived=%t)",
 		repository.Name,
 		deref(repoTitle),
 		repoDesc != nil,
 		publiccodeURL != nil,
+		repository.IsArchived,
 	)
 
 	lastActivity := c.lastActivityFromGit(repository, cloneErr, &logEntries)
@@ -344,6 +345,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		repoDesc,
 		publiccodeURL,
 		&repository.IsFork,
+		&repository.IsArchived,
 		orgURI(repository.Publisher),
 		repository.CreatedAt,
 		time.Now(),

@@ -421,6 +421,7 @@ func addProject(
 			URL:          *originalURL,
 			CanonicalURL: *canonicalURL,
 			IsFork:       gitlabProjectIsFork(&project),
+			IsArchived:   project.Archived,
 			GitBranch:    project.DefaultBranch,
 			CreatedAt:    gitlabTime(project.CreatedAt),
 			UpdatedAt:    gitlabUpdatedAt(project),

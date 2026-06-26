@@ -246,6 +246,7 @@ Retry:
 		URL:          url,
 		CanonicalURL: *canonicalURL,
 		IsFork:       githubRepositoryIsFork(repo),
+		IsArchived:   repo.GetArchived(),
 		GitBranch:    *repo.DefaultBranch,
 		CreatedAt:    repo.GetCreatedAt().Time,
 		UpdatedAt:    repo.GetUpdatedAt().Time,
