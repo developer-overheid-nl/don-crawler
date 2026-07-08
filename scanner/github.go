@@ -23,6 +23,8 @@ type GitHubScanner struct {
 	ctx    context.Context
 }
 
+const githubProvider = "github"
+
 var githubCommitRateLimit = struct {
 	mu    sync.Mutex
 	reset time.Time
@@ -246,6 +248,7 @@ Retry:
 		URL:          url,
 		CanonicalURL: *canonicalURL,
 		IsFork:       githubRepositoryIsFork(repo),
+		IsArchived:   repo.GetArchived(),
 		GitBranch:    *repo.DefaultBranch,
 		CreatedAt:    repo.GetCreatedAt().Time,
 		UpdatedAt:    repo.GetUpdatedAt().Time,
@@ -258,7 +261,7 @@ Retry:
 
 // LastCommitTimeFromAPI returns the last commit time for a GitHub repository.
 func (scanner GitHubScanner) LastCommitTimeFromAPI(repoURL url.URL) (time.Time, error) {
-	return lastCommitTimeWithRetry("github", func() (time.Time, error) {
+	return lastCommitTimeWithRetry(githubProvider, func() (time.Time, error) {
 		return scanner.lastCommitTimeFromAPI(repoURL)
 	})
 }
@@ -270,7 +273,7 @@ func (scanner GitHubScanner) lastCommitTimeFromAPI(repoURL url.URL) (time.Time, 
 	}
 
 	if reset := githubCommitRateLimitReset(); !reset.IsZero() {
-		return time.Time{}, RateLimitError{Provider: "github", Reset: reset}
+		return time.Time{}, RateLimitError{Provider: githubProvider, Reset: reset}
 	}
 
 	opts := &github.CommitsListOptions{
@@ -284,7 +287,7 @@ func (scanner GitHubScanner) lastCommitTimeFromAPI(repoURL url.URL) (time.Time, 
 			reset := rateLimitError.Rate.Reset.Time
 			setGitHubCommitRateLimit(reset)
 
-			return time.Time{}, RateLimitError{Provider: "github", Reset: reset}
+			return time.Time{}, RateLimitError{Provider: githubProvider, Reset: reset}
 		}
 
 		var abuseRateLimitError *github.AbuseRateLimitError
@@ -292,7 +295,7 @@ func (scanner GitHubScanner) lastCommitTimeFromAPI(repoURL url.URL) (time.Time, 
 			reset := time.Now().Add(githubAbuseRetryAfter(abuseRateLimitError))
 			setGitHubCommitRateLimit(reset)
 
-			return time.Time{}, RateLimitError{Provider: "github", Reset: reset}
+			return time.Time{}, RateLimitError{Provider: githubProvider, Reset: reset}
 		}
 
 		return time.Time{}, err

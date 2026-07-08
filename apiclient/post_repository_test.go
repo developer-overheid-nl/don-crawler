@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPostRepositoryIncludesForkFlag(t *testing.T) {
+func TestPostRepositoryIncludesForkAndArchivedFlags(t *testing.T) {
 	var received repositoryRequest
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,12 +32,14 @@ func TestPostRepositoryIncludesForkFlag(t *testing.T) {
 	}
 
 	isFork := true
+	archived := false
 	created, err := client.PostRepository(
 		"https://github.com/example/fork.git",
 		nil,
 		nil,
 		nil,
 		&isFork,
+		&archived,
 		"https://example.org/orgs/test",
 		time.Time{},
 		time.Time{},
@@ -47,4 +49,6 @@ func TestPostRepositoryIncludesForkFlag(t *testing.T) {
 	require.NotNil(t, created)
 	assert.NotNil(t, received.IsFork)
 	assert.True(t, *received.IsFork)
+	assert.NotNil(t, received.Archived)
+	assert.False(t, *received.Archived)
 }

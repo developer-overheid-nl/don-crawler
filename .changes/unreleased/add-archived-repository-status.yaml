@@ -1,0 +1,3 @@
+kind: Changed
+body: Send archived repository status to the OSS register for GitHub, GitLab, and Bitbucket repositories.
+time: 2026-06-30T11:27:00+02:00

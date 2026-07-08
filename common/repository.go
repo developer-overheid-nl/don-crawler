@@ -13,6 +13,7 @@ type Repository struct {
 	URL          url.URL
 	CanonicalURL url.URL
 	IsFork       bool
+	IsArchived   bool
 	FileRawURL   string
 	GitBranch    string
 	CreatedAt    time.Time
