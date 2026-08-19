@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,23 +56,21 @@ func CalculateRepoActivity(repository common.Repository, days int) (float64, map
 
 	activity, err := collectActivitySnapshot(path, days, now)
 	if err != nil {
-		log.Error(err)
-
 		return 0, nil, err
 	}
 
 	if err := collectTagStats(path, activity); err != nil {
-		log.Error(err)
+		logPartialActivityError(repository.Name, "tag activity", err)
 	}
 
 	longevity, err := activityLongevity(activity)
 	if err != nil {
-		log.Warn(err)
+		logPartialActivityError(repository.Name, "longevity", err)
 	}
 
 	rangeData, err := loadRangesData()
 	if err != nil {
-		log.Error(err)
+		return 0, nil, fmt.Errorf("load vitality ranges: %w", err)
 	}
 
 	vitalityIndex := make(map[int]float64, days)
@@ -98,6 +97,10 @@ func CalculateRepoActivity(repository common.Repository, days int) (float64, map
 	}
 
 	return float64(int(vitalityIndexTotal)), vitalityIndex, nil
+}
+
+func logPartialActivityError(repositoryName, component string, err error) {
+	log.Warnf("[%s] %s unavailable: %v; continuing without it", repositoryName, component, err)
 }
 
 func collectActivitySnapshot(repoPath string, days int, now time.Time) (*models.ActivitySnapshot, error) {

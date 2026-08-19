@@ -67,9 +67,7 @@ type repositoryRequest struct {
 }
 
 func NewClient() APIClient {
-	rc := retryablehttp.NewClient()
-	rc.RetryMax = 3
-	rc.HTTPClient.Timeout = 60 * time.Second
+	rc := newRetryableClient()
 	retryableClient := rc.StandardClient()
 	token := ""
 	tokenFetcher := NewKeycloakTokenFetcherFromEnv()
@@ -78,12 +76,12 @@ func NewClient() APIClient {
 		if fetched, err := tokenFetcher.Fetch(context.Background()); err == nil && fetched != "" {
 			token = "Bearer " + fetched
 
-			log.Infof("Fetched bearer token via KeycloakTokenFetcher")
+			log.Debugf("Fetched bearer token via KeycloakTokenFetcher")
 		} else if err != nil {
 			log.Warnf("API_BEARER_TOKEN not set and Keycloak fetch failed: %v", err)
 		}
 	} else {
-		log.Warn("API_BEARER_TOKEN not set; authenticated calls will fail")
+		log.Debug("API authentication is not configured")
 	}
 
 	return APIClient{
@@ -93,6 +91,15 @@ func NewClient() APIClient {
 		xAPIKey:         viper.GetString("API_X_API_KEY"),
 		tokenFetcher:    tokenFetcher,
 	}
+}
+
+func newRetryableClient() *retryablehttp.Client {
+	rc := retryablehttp.NewClient()
+	rc.Logger = nil
+	rc.RetryMax = 3
+	rc.HTTPClient.Timeout = 60 * time.Second
+
+	return rc
 }
 
 func (clt *APIClient) Get(url string) (*http.Response, error) {
@@ -183,7 +190,12 @@ func (clt APIClient) GetGitOrganisations() ([]common.Publisher, error) {
 	publishers := make([]common.Publisher, 0, 25)
 
 	for {
-		reqURL := fmt.Sprintf("%s?page=%d&perPage=%d", joinPath(clt.baseURL, "/git-organisations"), page, perPage)
+		endpoint, err := joinPath(clt.baseURL, "/git-organisations")
+		if err != nil {
+			return nil, fmt.Errorf("can't build gitOrganisations URL: %w", err)
+		}
+
+		reqURL := fmt.Sprintf("%s?page=%d&perPage=%d", endpoint, page, perPage)
 
 		res, err := clt.Get(reqURL)
 		if err != nil {
@@ -293,7 +305,11 @@ func (clt APIClient) PostRepository(
 		return nil, fmt.Errorf("can't marshal repository: %w", err)
 	}
 
-	endpoint := joinPath(clt.baseURL, "/repositories")
+	endpoint, err := joinPath(clt.baseURL, "/repositories")
+	if err != nil {
+		return nil, fmt.Errorf("can't build repository URL: %w", err)
+	}
+
 	log.Debugf(
 		"POST %s (repoUrl=%s name=%s descPresent=%t publiccode=%t isFork=%t archived=%t orgUri=%s)",
 		endpoint,
@@ -306,8 +322,8 @@ func (clt APIClient) PostRepository(
 		organisationURI,
 	)
 
-	if log.IsLevelEnabled(log.DebugLevel) {
-		log.Debugf("POST %s payload=%s", endpoint, strings.TrimSpace(string(body)))
+	if log.IsLevelEnabled(log.TraceLevel) {
+		log.Tracef("POST %s payload=%s", endpoint, strings.TrimSpace(string(body)))
 	}
 
 	res, err := clt.Post(endpoint, body)
@@ -349,17 +365,17 @@ func (clt *APIClient) refreshToken(ctx context.Context) (string, error) {
 	return clt.token, nil
 }
 
-func joinPath(base string, paths ...string) string {
+func joinPath(base string, paths ...string) (string, error) {
 	u, err := url.Parse(base)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
 
 	for _, p := range paths {
 		u.Path = path.Join(u.Path, p)
 	}
 
-	return u.String()
+	return u.String(), nil
 }
 
 func parseNextPage(linkHeader string) int {

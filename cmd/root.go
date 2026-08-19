@@ -22,8 +22,6 @@ Complete documentation is available at https://github.com/italia/publiccode-craw
 )
 
 // Execute is the entrypoint for cmd package Cobra.
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		log.Fatal(err)
-	}
+func Execute() error {
+	return rootCmd.Execute()
 }

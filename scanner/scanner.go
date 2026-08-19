@@ -8,7 +8,10 @@ import (
 	"github.com/developer-overheid-nl/don-crawler/common"
 )
 
-var ErrPubliccodeNotFound = errors.New("publiccode.yml not found")
+var (
+	ErrPubliccodeNotFound = errors.New("publiccode.yml not found")
+	ErrRepositorySkipped  = errors.New("repository skipped")
+)
 
 type Scanner interface {
 	ScanRepo(url url.URL, publisher common.Publisher, repositories chan common.Repository) error
