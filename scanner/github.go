@@ -13,7 +13,7 @@ import (
 
 	"github.com/developer-overheid-nl/don-crawler/common"
 	githubapp "github.com/developer-overheid-nl/don-crawler/internal/githubapp"
-	"github.com/google/go-github/v43/github"
+	"github.com/google/go-github/v90/github"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
@@ -49,7 +49,10 @@ func NewGitHubScanner() Scanner {
 
 	httpClient = oauth2.NewClient(ctx, provider.TokenSource(ctx))
 
-	client := github.NewClient(httpClient)
+	client, err := github.NewClient(github.WithHTTPClient(httpClient))
+	if err != nil {
+		log.Fatalf("GitHub API auth: unable to create GitHub client: %v", err)
+	}
 
 	return GitHubScanner{client: client, ctx: ctx}
 }
@@ -98,7 +101,7 @@ func (scanner GitHubScanner) ScanGroupOfRepos(
 				url.String(), err.Error(),
 			)
 
-			repos, resp, err = scanner.client.Repositories.List(scanner.ctx, orgName, nil)
+			repos, resp, err = scanner.client.Repositories.ListByUser(scanner.ctx, orgName, nil)
 			if err != nil {
 				return fmt.Errorf("can't list repositories in %s (not an GitHub organization?): %w", url.String(), err)
 			}
@@ -301,11 +304,11 @@ func (scanner GitHubScanner) lastCommitTimeFromAPI(repoURL url.URL) (time.Time, 
 
 	commit := commits[0].Commit
 	if commit.Committer != nil && commit.Committer.Date != nil {
-		return *commit.Committer.Date, nil
+		return commit.Committer.Date.Time, nil
 	}
 
 	if commit.Author != nil && commit.Author.Date != nil {
-		return *commit.Author.Date, nil
+		return commit.Author.Date.Time, nil
 	}
 
 	return time.Time{}, errors.New("commit date missing")

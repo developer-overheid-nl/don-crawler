@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/developer-overheid-nl/don-crawler/common"
-	"github.com/google/go-github/v43/github"
+	"github.com/google/go-github/v90/github"
 	log "github.com/sirupsen/logrus"
 	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
@@ -41,10 +41,12 @@ func captureScannerLogs(t *testing.T) *logtest.Hook {
 func githubScannerForServer(t *testing.T, server *httptest.Server) GitHubScanner {
 	t.Helper()
 
-	client := github.NewClient(server.Client())
-	baseURL, err := url.Parse(server.URL + "/")
+	baseURL := server.URL + "/"
+	client, err := github.NewClient(
+		github.WithHTTPClient(server.Client()),
+		github.WithURLs(&baseURL, nil),
+	)
 	require.NoError(t, err)
-	client.BaseURL = baseURL
 
 	return GitHubScanner{client: client, ctx: context.Background()}
 }

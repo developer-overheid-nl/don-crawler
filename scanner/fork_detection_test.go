@@ -3,7 +3,7 @@ package scanner
 import (
 	"testing"
 
-	"github.com/google/go-github/v43/github"
+	"github.com/google/go-github/v90/github"
 	"github.com/ktrysmt/go-bitbucket"
 	"github.com/stretchr/testify/assert"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
