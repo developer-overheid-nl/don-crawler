@@ -1,3 +1,0 @@
-kind: Security
-body: Update the Go toolchain, GitHub client, dependencies, and CI actions to current secure releases.
-time: 2026-08-19T13:29:55+02:00
