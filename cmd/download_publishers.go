@@ -2,13 +2,13 @@ package cmd
 
 import (
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
 
 	"github.com/developer-overheid-nl/don-crawler/common"
 	ymlurl "github.com/developer-overheid-nl/don-crawler/internal"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )

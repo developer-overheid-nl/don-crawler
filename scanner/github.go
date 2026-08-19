@@ -13,7 +13,7 @@ import (
 
 	"github.com/developer-overheid-nl/don-crawler/common"
 	githubapp "github.com/developer-overheid-nl/don-crawler/internal/githubapp"
-	"github.com/google/go-github/v43/github"
+	"github.com/google/go-github/v90/github"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
@@ -49,7 +49,10 @@ func NewGitHubScanner() Scanner {
 
 	httpClient = oauth2.NewClient(ctx, provider.TokenSource(ctx))
 
-	client := github.NewClient(httpClient)
+	client, err := github.NewClient(github.WithHTTPClient(httpClient))
+	if err != nil {
+		log.Fatalf("GitHub API auth: unable to create GitHub client: %v", err)
+	}
 
 	return GitHubScanner{client: client, ctx: ctx}
 }
@@ -93,12 +96,12 @@ func (scanner GitHubScanner) ScanGroupOfRepos(
 
 		if err != nil {
 			// Try to list repos by user, for backwards compatibility.
-			log.Warnf(
+			log.Debugf(
 				"can't list repositories in %s (not an GitHub organization?): %s",
 				url.String(), err.Error(),
 			)
 
-			repos, resp, err = scanner.client.Repositories.List(scanner.ctx, orgName, nil)
+			repos, resp, err = scanner.client.Repositories.ListByUser(scanner.ctx, orgName, nil)
 			if err != nil {
 				return fmt.Errorf("can't list repositories in %s (not an GitHub organization?): %w", url.String(), err)
 			}
@@ -134,8 +137,8 @@ func (scanner GitHubScanner) ScanGroupOfRepos(
 			}
 
 			if err = scanner.ScanRepo(*repoURL, publisher, repositories); err != nil {
-				if errors.Is(err, ErrPubliccodeNotFound) {
-					log.Warnf("can't scan repository %s: %s", repoURL.String(), err.Error())
+				if errors.Is(err, ErrPubliccodeNotFound) || errors.Is(err, ErrRepositorySkipped) {
+					log.Debugf("can't scan repository %s: %s", repoURL.String(), err.Error())
 				} else {
 					log.Errorf("can't scan repository %s: %s", repoURL.String(), err.Error())
 				}
@@ -198,7 +201,7 @@ Retry:
 	}
 
 	if repo.GetPrivate() {
-		return fmt.Errorf("skipping private repo %s", repo.GetFullName())
+		return fmt.Errorf("%w: private repo %s", ErrRepositorySkipped, repo.GetFullName())
 	}
 
 	file, _, resp, err := scanner.client.Repositories.GetContents(scanner.ctx, orgName, repoName, "publiccode.yml", nil)
@@ -218,13 +221,7 @@ Retry:
 	var fileRawURL string
 
 	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
-			log.Warnf(
-				"[%s]: publiccode.yml not found on branch %s",
-				*repo.FullName,
-				repo.GetDefaultBranch(),
-			)
-		} else {
+		if resp == nil || resp.StatusCode != http.StatusNotFound {
 			return fmt.Errorf("[%s]: failed to get publiccode.yml: %w", *repo.FullName, err)
 		}
 	} else {
@@ -307,11 +304,11 @@ func (scanner GitHubScanner) lastCommitTimeFromAPI(repoURL url.URL) (time.Time, 
 
 	commit := commits[0].Commit
 	if commit.Committer != nil && commit.Committer.Date != nil {
-		return *commit.Committer.Date, nil
+		return commit.Committer.Date.Time, nil
 	}
 
 	if commit.Author != nil && commit.Author.Date != nil {
-		return *commit.Author.Date, nil
+		return commit.Author.Date.Time, nil
 	}
 
 	return time.Time{}, errors.New("commit date missing")

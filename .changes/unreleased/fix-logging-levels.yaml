@@ -1,0 +1,3 @@
+kind: Fixed
+body: Reduce duplicate crawler logs, classify expected repository outcomes at appropriate log levels, and update dependencies and CI actions to secure releases.
+time: 2026-08-19T13:04:22+02:00

@@ -219,8 +219,8 @@ func (c *Crawler) ScanPublisher(publisher common.Publisher) {
 	}
 
 	if err != nil {
-		if errors.Is(err, scanner.ErrPubliccodeNotFound) {
-			log.Warnf("[%s] %s", orgURL.String(), err.Error())
+		if errors.Is(err, scanner.ErrPubliccodeNotFound) || errors.Is(err, scanner.ErrRepositorySkipped) {
+			log.Debugf("[%s] %s", orgURL.String(), err.Error())
 		} else {
 			log.Error(err)
 		}
@@ -245,8 +245,8 @@ func (c *Crawler) ScanPublisher(publisher common.Publisher) {
 		}
 
 		if err != nil {
-			if errors.Is(err, scanner.ErrPubliccodeNotFound) {
-				log.Warnf("[%s] %s", repoURL.String(), err.Error())
+			if errors.Is(err, scanner.ErrPubliccodeNotFound) || errors.Is(err, scanner.ErrRepositorySkipped) {
+				log.Debugf("[%s] %s", repoURL.String(), err.Error())
 			} else {
 				log.Error(err)
 			}
@@ -266,18 +266,7 @@ func (c *Crawler) ProcessRepositories(repos chan common.Repository) {
 
 // ProcessRepo looks for a publiccode.yml file in a repository, and if found it records the link.
 func (c *Crawler) ProcessRepo(repository common.Repository) {
-	var (
-		logEntries []string
-		err        error
-	)
-
-	defer func() {
-		for _, e := range logEntries {
-			log.Info(e)
-		}
-	}()
-
-	c.ensurePubliccodeFile(context.Background(), &repository, &logEntries)
+	c.ensurePubliccodeFile(context.Background(), &repository)
 	hasPubliccode := repository.FileRawURL != ""
 
 	if c.DryRun {
@@ -288,7 +277,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 
 	cloneURL := repository.CanonicalURL.String()
 
-	cloneErr := c.cloneAndLogActivity(repository, cloneURL, &logEntries)
+	cloneErr := c.cloneAndLogActivity(repository, cloneURL)
 
 	if viper.GetBool("CLEANUP_GIT_CLONES") {
 		defer func() {
@@ -303,10 +292,7 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 			readmeContents, readmeErr := git.ReadReadme(repository)
 			if readmeErr != nil {
 				if !errors.Is(readmeErr, git.ErrReadmeNotFound) {
-					logEntries = append(
-						logEntries,
-						fmt.Sprintf("[%s] failed to read README: %v", repository.Name, readmeErr),
-					)
+					log.Warnf("[%s] failed to read README: %v", repository.Name, readmeErr)
 				}
 			} else {
 				repository.Description = descriptionFromReadme(readmeContents)
@@ -337,9 +323,9 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		repository.IsArchived,
 	)
 
-	lastActivity := c.lastActivityFromGit(repository, cloneErr, &logEntries)
+	lastActivity := c.lastActivityFromGit(repository, cloneErr)
 
-	if _, err = c.apiClient.PostRepository(
+	if _, err := c.apiClient.PostRepository(
 		repository.CanonicalURL.String(),
 		repoTitle,
 		repoDesc,
@@ -351,9 +337,12 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		time.Now(),
 		lastActivity,
 	); err != nil {
-		logEntries = append(logEntries, fmt.Sprintf("[%s]: %s", repository.Name, err.Error()))
-		log.Errorf("[%s] PostRepository failed: %v", repository.Name, err)
+		logPostRepositoryError(repository.Name, err)
 	}
+}
+
+func logPostRepositoryError(repositoryName string, err error) {
+	log.Errorf("[%s] PostRepository failed: %v", repositoryName, err)
 }
 
 func publiccodeGetStatus(ctx context.Context, resourceURL string, headers map[string]string) (int, http.Header, error) {
@@ -456,10 +445,9 @@ func publiccodeGetStatusWithRetry(ctx context.Context, resourceURL string, heade
 	}
 }
 
-func (c *Crawler) ensurePubliccodeFile(ctx context.Context, repository *common.Repository, logEntries *[]string) {
+func (c *Crawler) ensurePubliccodeFile(ctx context.Context, repository *common.Repository) {
 	if repository.FileRawURL == "" {
-		*logEntries = append(*logEntries, fmt.Sprintf("[%s] publiccode.yml not found", repository.Name))
-		log.Warnf("[%s] publiccode.yml missing, will proceed without it", repository.Name)
+		log.Debugf("[%s] publiccode.yml not found", repository.Name)
 
 		return
 	}
@@ -467,27 +455,28 @@ func (c *Crawler) ensurePubliccodeFile(ctx context.Context, repository *common.R
 	statusCode, err := publiccodeGetStatusWithRetry(ctx, repository.FileRawURL, repository.Headers)
 
 	if statusCode == http.StatusOK && err == nil {
-		*logEntries = append(
-			*logEntries,
-			fmt.Sprintf(
-				"[%s] publiccode.yml found at %s\n",
-				repository.CanonicalURL.String(),
-				repository.FileRawURL,
-			),
-		)
+		log.Debugf("[%s] publiccode.yml found at %s", repository.Name, repository.FileRawURL)
 
 		return
 	}
 
 	if err != nil {
 		log.Warnf("[%s] publiccode.yml request failed: %v", repository.Name, err)
+		repository.FileRawURL = ""
+
+		return
 	}
 
-	*logEntries = append(
-		*logEntries,
-		fmt.Sprintf("[%s] Failed to GET publiccode.yml (status: %d)", repository.Name, statusCode),
-	)
-	log.Warnf("[%s] publiccode.yml not reachable (status: %d), continuing without it", repository.Name, statusCode)
+	if statusCode == http.StatusNotFound {
+		log.Debugf("[%s] publiccode.yml not reachable (status: %d)", repository.Name, statusCode)
+	} else {
+		log.Warnf(
+			"[%s] publiccode.yml not reachable (status: %d), continuing without it",
+			repository.Name,
+			statusCode,
+		)
+	}
+
 	repository.FileRawURL = ""
 }
 
@@ -536,42 +525,40 @@ func (c *Crawler) lastActivityFromAPI(repository common.Repository) (time.Time, 
 func (c *Crawler) cloneAndLogActivity(
 	repository common.Repository,
 	cloneURL string,
-	logEntries *[]string,
 ) error {
 	// Calculate Repository activity index and vitality. Defaults to 60 days.
 	if cloneURL == "" {
-		*logEntries = append(*logEntries, fmt.Sprintf("[%s] unable to determine clone URL\n", repository.Name))
+		log.Warnf("[%s] unable to determine clone URL", repository.Name)
 
 		return errors.New("clone URL empty")
 	}
 
 	unlock := c.repoLocks.lock(repoLockKey(repository))
 
-	log.Infof("[%s] cloning %s", repository.Name, cloneURL)
+	log.Debugf("[%s] cloning %s", repository.Name, cloneURL)
 	err := git.CloneRepository(repository.URL.Host, repository.Name, cloneURL, repository.GitBranch)
 
 	unlock()
 
 	if err != nil {
-		*logEntries = append(*logEntries, fmt.Sprintf("[%s] error while cloning: %v\n", repository.Name, err))
+		log.Warnf("[%s] error while cloning: %v", repository.Name, err)
 
 		return err
 	}
 
 	activityDays := activityDays()
 
-	log.Infof("[%s] calculating activity for the last %d days", repository.Name, activityDays)
+	log.Debugf("[%s] calculating activity for the last %d days", repository.Name, activityDays)
 
 	activityIndex, _, err := git.CalculateRepoActivity(repository, activityDays)
 	if err != nil {
-		*logEntries = append(
-			*logEntries,
-			fmt.Sprintf("[%s] error calculating activity index: %v\n", repository.Name, err),
-		)
+		log.Warnf("[%s] error calculating activity index: %v", repository.Name, err)
 	} else {
-		*logEntries = append(
-			*logEntries,
-			fmt.Sprintf("[%s] activity index in the last %d days: %f\n", repository.Name, activityDays, activityIndex),
+		log.Debugf(
+			"[%s] activity index in the last %d days: %f",
+			repository.Name,
+			activityDays,
+			activityIndex,
 		)
 	}
 
@@ -581,7 +568,6 @@ func (c *Crawler) cloneAndLogActivity(
 func (c *Crawler) lastActivityFromGit(
 	repository common.Repository,
 	cloneErr error,
-	logEntries *[]string,
 ) time.Time {
 	lastActivity := repository.UpdatedAt
 
@@ -590,11 +576,6 @@ func (c *Crawler) lastActivityFromGit(
 		return last
 	}
 
-	*logEntries = append(
-		*logEntries,
-		fmt.Sprintf("[%s] unable to determine last activity: %v", repository.Name, lastErr),
-	)
-
 	if cloneErr != nil {
 		apiLast, ok := c.lastActivityFromAPI(repository)
 
@@ -602,6 +583,12 @@ func (c *Crawler) lastActivityFromGit(
 			return apiLast
 		}
 	}
+
+	log.Warnf(
+		"[%s] unable to determine last activity: %v; falling back to repository updated timestamp",
+		repository.Name,
+		lastErr,
+	)
 
 	return lastActivity
 }

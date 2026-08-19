@@ -54,6 +54,7 @@ De crawler gebruikt op dit moment de volgende variabelen:
 | `DATADIR`                   | nee                       | Directory voor lokale data en clones. Default: `/app/data`.                         |
 | `ACTIVITY_DAYS`             | nee                       | Aantal dagen voor activity/vitality-bepaling en shallow clone-depth. Default: `60`.  |
 | `CLEANUP_GIT_CLONES`        | nee                       | Verwijder lokale clones na verwerking. Default: `true`.                              |
+| `LOG_LEVEL`                 | nee                       | Logniveau: `panic`, `fatal`, `error`, `warn`, `info`, `debug` of `trace`. Default: `info`. |
 | `LOG_FILE`                  | nee                       | Lokaal logbestand; alleen actief met `ENABLE_FILE_LOG=true`.                         |
 | `ENABLE_FILE_LOG`           | nee                       | Zet op `true` om ook naar `LOG_FILE` te schrijven. Default: `false`.                 |
 
