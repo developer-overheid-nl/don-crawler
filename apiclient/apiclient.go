@@ -18,7 +18,6 @@ import (
 	internalUrl "github.com/developer-overheid-nl/don-crawler/internal"
 	applog "github.com/developer-overheid-nl/don-crawler/internal/logging"
 	"github.com/hashicorp/go-retryablehttp"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -79,7 +78,7 @@ func NewClient() APIClient {
 
 			applog.Event("api_client", "authenticate").WithField("source", "keycloak").Debug("Bearer token fetched")
 		} else if err != nil {
-			applog.Event("api_client", "authenticate").WithFields(log.Fields{
+			applog.Event("api_client", "authenticate").WithFields(map[string]any{
 				"source":          "keycloak",
 				applog.FieldError: err,
 			}).Warn("Bearer token could not be fetched")
@@ -206,7 +205,7 @@ func (clt APIClient) GetGitOrganisations() ([]common.Publisher, error) {
 			return nil, fmt.Errorf("can't get gitOrganisations %s: %w", reqURL, err)
 		}
 
-		applog.Event("api_client", "get_git_organisations").WithFields(log.Fields{
+		applog.Event("api_client", "get_git_organisations").WithFields(map[string]any{
 			applog.FieldMethod:     http.MethodGet,
 			applog.FieldURL:        reqURL,
 			applog.FieldStatusCode: res.StatusCode,
@@ -319,7 +318,7 @@ func (clt APIClient) PostRepository(
 		return nil, fmt.Errorf("can't build repository URL: %w", err)
 	}
 
-	applog.Event("api_client", "post_repository").WithFields(log.Fields{
+	applog.Event("api_client", "post_repository").WithFields(map[string]any{
 		applog.FieldMethod:     http.MethodPost,
 		applog.FieldURL:        endpoint,
 		applog.FieldRepository: repoURL,
@@ -338,7 +337,7 @@ func (clt APIClient) PostRepository(
 
 	defer res.Body.Close()
 
-	applog.Event("api_client", "post_repository").WithFields(log.Fields{
+	applog.Event("api_client", "post_repository").WithFields(map[string]any{
 		applog.FieldMethod:     http.MethodPost,
 		applog.FieldURL:        endpoint,
 		applog.FieldStatusCode: res.StatusCode,

@@ -4,13 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/developer-overheid-nl/don-crawler/cmd"
 	applog "github.com/developer-overheid-nl/don-crawler/internal/logging"
+	commonlogging "github.com/developer-overheid-nl/don-register-common/logging"
 	"github.com/joho/godotenv"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -19,8 +20,12 @@ func main() {
 }
 
 func init() {
-	log.SetOutput(os.Stdout)
-	log.SetFormatter(applog.JSONFormatter{})
+	logger, err := commonlogging.NewJSONLogger(os.Stdout, "oss-register", "info")
+	if err != nil {
+		panic(fmt.Sprintf("configure bootstrap logging: %v", err))
+	}
+
+	slog.SetDefault(logger)
 }
 
 func run() int {
@@ -82,30 +87,19 @@ func run() int {
 }
 
 func configureLogging(console io.Writer) (io.Closer, error) {
-	levelName := strings.TrimSpace(viper.GetString("LOG_LEVEL"))
-	if levelName == "" {
-		levelName = "info"
-	}
-
-	levelName = strings.ToLower(levelName)
-
-	switch levelName {
-	case "debug", "info", "warn", "error":
-	default:
-		return nil, fmt.Errorf("invalid LOG_LEVEL %q: use debug, info, warn or error", levelName)
-	}
-
-	level, err := log.ParseLevel(levelName)
+	logger, err := commonlogging.NewJSONLogger(
+		console,
+		"oss-register",
+		viper.GetString("LOG_LEVEL"),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("invalid LOG_LEVEL %q: %w", levelName, err)
+		return nil, fmt.Errorf("configure shared logger: %w", err)
 	}
-
-	log.SetLevel(level)
-	log.SetOutput(console)
-	log.SetFormatter(applog.JSONFormatter{})
 
 	logPath := strings.TrimSpace(viper.GetString("LOG_FILE"))
 	if logPath == "" || !viper.GetBool("ENABLE_FILE_LOG") {
+		slog.SetDefault(logger)
+
 		return io.NopCloser(strings.NewReader("")), nil
 	}
 
@@ -114,7 +108,18 @@ func configureLogging(console io.Writer) (io.Closer, error) {
 		return nil, fmt.Errorf("unable to open log file %s: %w", logPath, err)
 	}
 
-	log.SetOutput(io.MultiWriter(console, f))
+	logger, err = commonlogging.NewJSONLogger(
+		io.MultiWriter(console, f),
+		"oss-register",
+		viper.GetString("LOG_LEVEL"),
+	)
+	if err != nil {
+		_ = f.Close()
+
+		return nil, fmt.Errorf("configure shared file logger: %w", err)
+	}
+
+	slog.SetDefault(logger)
 
 	return f, nil
 }
