@@ -74,7 +74,7 @@ Opmerkingen:
 
 Elke logregel is één compact JSON-object op `stdout`. De vaste velden zijn
 `time`, `level`, `msg`, `app`, `component` en `operation`; `app` is altijd
-`oss-register`. Afhankelijk van de gebeurtenis worden contextvelden toegevoegd,
+`don-crawler`. Afhankelijk van de gebeurtenis worden contextvelden toegevoegd,
 zoals `repository`, `publisher`, `provider`, `status_code`, `reset_time` en
 `error`. Wachttijden bij rate limits worden als `wait_ms` vastgelegd. Dezelfde
 JSON-regels worden naar `LOG_FILE` geschreven wanneer
@@ -88,7 +88,7 @@ De waarden van `level` zijn `DEBUG`, `INFO`, `WARN` en `ERROR`, zodat Loki het
 niveau automatisch als `detected_level` kan herkennen. Bijvoorbeeld:
 
 ```json
-{"app":"oss-register","component":"crawler","level":"INFO","msg":"Crawler run completed","operation":"complete","time":"2026-08-20T08:15:30.123Z"}
+{"app":"don-crawler","component":"crawler","level":"INFO","msg":"Crawler run completed","operation":"complete","time":"2026-08-20T08:15:30.123Z"}
 ```
 
 ## Build en run

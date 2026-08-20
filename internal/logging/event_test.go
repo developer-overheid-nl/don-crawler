@@ -21,7 +21,7 @@ func TestEventAddsStructuredCrawlerContext(t *testing.T) {
 	event := decodeEvent(t, output)
 	assert.Equal(t, "INFO", event["level"])
 	assert.Equal(t, "Crawler run completed", event["msg"])
-	assert.Equal(t, "oss-register", event["app"])
+	assert.Equal(t, "don-crawler", event["app"])
 	assert.Equal(t, "crawler", event["component"])
 	assert.Equal(t, "complete", event["operation"])
 	assert.Equal(t, "owner/repository", event[FieldRepository])
@@ -44,7 +44,7 @@ func captureEvents(t *testing.T) *bytes.Buffer {
 	t.Helper()
 
 	var output bytes.Buffer
-	logger, err := commonlogging.NewJSONLogger(&output, "oss-register", "debug")
+	logger, err := commonlogging.NewJSONLogger(&output, "don-crawler", "debug")
 	require.NoError(t, err)
 
 	previousLogger := slog.Default()

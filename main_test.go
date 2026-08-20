@@ -64,7 +64,7 @@ func TestConfigureLoggingWritesStructuredApplicationContext(t *testing.T) {
 	require.NoError(t, json.Unmarshal(console.Bytes(), &event))
 	assert.Equal(t, "INFO", event["level"])
 	assert.Equal(t, "Crawler run completed", event["msg"])
-	assert.Equal(t, "oss-register", event["app"])
+	assert.Equal(t, "don-crawler", event["app"])
 	assert.Equal(t, "crawler", event["component"])
 	assert.Equal(t, "complete", event["operation"])
 

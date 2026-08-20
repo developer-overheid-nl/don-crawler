@@ -22,7 +22,7 @@ func Capture(tb testing.TB, level string) *Recorder {
 
 	recorder := &Recorder{}
 
-	logger, err := commonlogging.NewJSONLogger(&recorder.output, "oss-register", level)
+	logger, err := commonlogging.NewJSONLogger(&recorder.output, "don-crawler", level)
 	if err != nil {
 		tb.Fatalf("create test logger: %v", err)
 	}

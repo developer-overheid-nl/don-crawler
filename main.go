@@ -15,12 +15,14 @@ import (
 	"github.com/spf13/viper"
 )
 
+const applicationName = "don-crawler"
+
 func main() {
 	os.Exit(run())
 }
 
 func init() {
-	logger, err := commonlogging.NewJSONLogger(os.Stdout, "oss-register", "info")
+	logger, err := commonlogging.NewJSONLogger(os.Stdout, applicationName, "info")
 	if err != nil {
 		panic(fmt.Sprintf("configure bootstrap logging: %v", err))
 	}
@@ -89,7 +91,7 @@ func run() int {
 func configureLogging(console io.Writer) (io.Closer, error) {
 	logger, err := commonlogging.NewJSONLogger(
 		console,
-		"oss-register",
+		applicationName,
 		viper.GetString("LOG_LEVEL"),
 	)
 	if err != nil {
@@ -110,7 +112,7 @@ func configureLogging(console io.Writer) (io.Closer, error) {
 
 	logger, err = commonlogging.NewJSONLogger(
 		io.MultiWriter(console, f),
-		"oss-register",
+		applicationName,
 		viper.GetString("LOG_LEVEL"),
 	)
 	if err != nil {
