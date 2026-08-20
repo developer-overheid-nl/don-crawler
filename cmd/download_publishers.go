@@ -8,7 +8,7 @@ import (
 
 	"github.com/developer-overheid-nl/don-crawler/common"
 	ymlurl "github.com/developer-overheid-nl/don-crawler/internal"
-	log "github.com/sirupsen/logrus"
+	applog "github.com/developer-overheid-nl/don-crawler/internal/logging"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -36,7 +36,10 @@ var downloadPublishersCmd = &cobra.Command{
 		if _, err := os.Stat(args[1]); err == nil {
 			data, err := os.ReadFile(args[1])
 			if err != nil {
-				log.Fatalf("error in reading %s: %v", args[1], err)
+				applog.Event("command", "read_publishers").WithFields(map[string]any{
+					applog.FieldPath:  args[1],
+					applog.FieldError: err,
+				}).Fatal("Publishers file could not be read")
 			}
 			//nolint:musttag // false positive
 			_ = yaml.Unmarshal(data, &publishers)
@@ -44,20 +47,23 @@ var downloadPublishersCmd = &cobra.Command{
 
 		resp, err := http.Get(args[0])
 		if err != nil {
-			log.Fatal(err)
+			applog.Event("command", "download_publishers").WithFields(map[string]any{
+				"source":          args[0],
+				applog.FieldError: err,
+			}).Fatal("Publishers list could not be downloaded")
 		}
 		defer resp.Body.Close()
 
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
-			log.Fatal(err)
+			applog.Event("command", "read_publishers_response").WithError(err).Fatal("Publishers response could not be read")
 		}
 
 		var repolist repolistType
 
 		err = yaml.Unmarshal(bodyBytes, &repolist)
 		if err != nil {
-			log.Fatal(err)
+			applog.Event("command", "decode_publishers").WithError(err).Fatal("Publishers response could not be decoded")
 		}
 
 	REPOLIST:
@@ -86,17 +92,23 @@ var downloadPublishersCmd = &cobra.Command{
 		// Write to the destination file
 		f, err := os.Create(args[1])
 		if err != nil {
-			log.Fatal(err)
+			applog.Event("command", "create_publishers_file").WithFields(map[string]any{
+				applog.FieldPath:  args[1],
+				applog.FieldError: err,
+			}).Fatal("Publishers file could not be created")
 		}
 		defer f.Close()
 
 		data, err := yaml.Marshal(publishers)
 		if err != nil {
-			log.Fatal(err)
+			applog.Event("command", "encode_publishers").WithError(err).Fatal("Publishers could not be encoded")
 		}
 
 		if _, err = f.Write(data); err != nil {
-			log.Fatal(err)
+			applog.Event("command", "write_publishers").WithFields(map[string]any{
+				applog.FieldPath:  args[1],
+				applog.FieldError: err,
+			}).Fatal("Publishers file could not be written")
 		}
 	},
 }

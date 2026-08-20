@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	applog "github.com/developer-overheid-nl/don-crawler/internal/logging"
 )
 
 var ErrLastCommitRateLimited = errors.New("last commit API rate limited")
@@ -67,8 +67,11 @@ func lastCommitTimeWithRetry(provider string, fetch func() (time.Time, error)) (
 			waitProvider = rateLimitErr.Provider
 		}
 
-		log.Infof("%s commit API rate limited; waiting until %s", strings.ToLower(waitProvider),
-			rateLimitErr.Reset.Format(time.RFC3339))
+		applog.Event("scanner", "wait_for_commit_rate_limit").WithFields(map[string]any{
+			"provider":            strings.ToLower(waitProvider),
+			applog.FieldResetTime: rateLimitErr.Reset,
+			"wait_ms":             wait.Milliseconds(),
+		}).Info("Commit API rate limited; waiting before retry")
 		time.Sleep(wait)
 	}
 }

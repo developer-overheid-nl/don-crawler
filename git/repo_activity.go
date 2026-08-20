@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/developer-overheid-nl/don-crawler/common"
+	applog "github.com/developer-overheid-nl/don-crawler/internal/logging"
 	"github.com/developer-overheid-nl/don-crawler/models"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	yaml "gopkg.in/yaml.v2"
 )
@@ -100,7 +100,11 @@ func CalculateRepoActivity(repository common.Repository, days int) (float64, map
 }
 
 func logPartialActivityError(repositoryName, component string, err error) {
-	log.Warnf("[%s] %s unavailable: %v; continuing without it", repositoryName, component, err)
+	applog.Event("git_activity", "calculate_partial_activity").WithFields(map[string]any{
+		applog.FieldRepository: repositoryName,
+		"activity_component":   component,
+		applog.FieldError:      err,
+	}).Warnf("[%s] %s unavailable: %v; continuing without it", repositoryName, component, err)
 }
 
 func collectActivitySnapshot(repoPath string, days int, now time.Time) (*models.ActivitySnapshot, error) {

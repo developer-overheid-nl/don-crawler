@@ -5,7 +5,7 @@ import (
 	"github.com/developer-overheid-nl/don-crawler/common"
 	"github.com/developer-overheid-nl/don-crawler/crawler"
 	githubapp "github.com/developer-overheid-nl/don-crawler/internal/githubapp"
-	log "github.com/sirupsen/logrus"
+	applog "github.com/developer-overheid-nl/don-crawler/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +35,7 @@ crawl directory/*.yml`,
 	Args: cobra.MinimumNArgs(0),
 	Run: func(_ *cobra.Command, args []string) {
 		if !githubapp.HasEnv() {
-			log.Fatal("Please set GIT_OAUTH_CLIENTID/GIT_OAUTH_INSTALLATION_ID/GIT_OAUTH_SECRET to use the GitHub API")
+			applog.Event("command", "validate_github_auth").Fatal("GitHub App environment is not configured")
 		}
 
 		c := crawler.NewCrawler(dryRun)
@@ -49,13 +49,16 @@ crawl directory/*.yml`,
 
 			publishers, err = apiclient.GetGitOrganisations()
 			if err != nil {
-				log.Fatal(err)
+				applog.Event("command", "load_publishers").WithError(err).Fatal("Publishers could not be loaded from the API")
 			}
 		} else {
 			for _, yamlFile := range args {
 				filePublishers, err := common.LoadPublishers(yamlFile)
 				if err != nil {
-					log.Fatal(err)
+					applog.Event("command", "load_publishers").WithFields(map[string]any{
+						"source":          yamlFile,
+						applog.FieldError: err,
+					}).Fatal("Publishers could not be loaded from file")
 				}
 
 				publishers = append(publishers, filePublishers...)
@@ -63,7 +66,7 @@ crawl directory/*.yml`,
 		}
 
 		if err := c.CrawlPublishers(publishers); err != nil {
-			log.Fatal(err)
+			applog.Event("command", "crawl_publishers").WithError(err).Fatal("Publisher crawl failed")
 		}
 	},
 }

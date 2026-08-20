@@ -1,7 +1,6 @@
 package apiclient
 
 import (
-	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -85,7 +84,7 @@ func TestPostRepositoryDoesNotLogPayloadAtDebug(t *testing.T) {
 	}
 }
 
-func TestPostRepositoryLogsPayloadAtTrace(t *testing.T) {
+func TestPostRepositoryDoesNotLogPayloadAtTrace(t *testing.T) {
 	hook := captureAPIClientLogs(t, log.TraceLevel)
 	client, closeServer := successfulRepositoryAPIClient(t)
 	t.Cleanup(closeServer)
@@ -104,15 +103,9 @@ func TestPostRepositoryLogsPayloadAtTrace(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	var payloadEntry *log.Entry
 	for _, entry := range hook.AllEntries() {
-		if bytes.Contains([]byte(entry.Message), []byte("payload=")) {
-			payloadEntry = entry
-			break
-		}
+		assert.NotContains(t, entry.Data, "payload")
 	}
-	require.NotNil(t, payloadEntry)
-	assert.Equal(t, log.TraceLevel, payloadEntry.Level)
 }
 
 func TestJoinPathReturnsInvalidBaseURLToCaller(t *testing.T) {

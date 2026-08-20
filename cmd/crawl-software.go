@@ -4,7 +4,7 @@ import (
 	"github.com/developer-overheid-nl/don-crawler/common"
 	"github.com/developer-overheid-nl/don-crawler/crawler"
 	githubapp "github.com/developer-overheid-nl/don-crawler/internal/githubapp"
-	log "github.com/sirupsen/logrus"
+	applog "github.com/developer-overheid-nl/don-crawler/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +27,7 @@ Crawl a single software given its API id and its publisher.`,
 	Args: cobra.ExactArgs(2),
 	Run: func(_ *cobra.Command, args []string) {
 		if !githubapp.HasEnv() {
-			log.Fatal("Please set GIT_OAUTH_CLIENTID/GIT_OAUTH_INSTALLATION_ID/GIT_OAUTH_SECRET to use the GitHub API")
+			applog.Event("command", "validate_github_auth").Fatal("GitHub App environment is not configured")
 		}
 
 		c := crawler.NewCrawler(dryRun)
@@ -37,7 +37,11 @@ Crawl a single software given its API id and its publisher.`,
 		}
 
 		if err := c.CrawlSoftwareByID(args[0], publisher); err != nil {
-			log.Fatal(err)
+			applog.Event("command", "crawl_software").WithFields(map[string]any{
+				"software":            args[0],
+				applog.FieldPublisher: args[1],
+				applog.FieldError:     err,
+			}).Fatal("Software crawl failed")
 		}
 	},
 }

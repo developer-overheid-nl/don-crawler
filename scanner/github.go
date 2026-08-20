@@ -13,8 +13,8 @@ import (
 
 	"github.com/developer-overheid-nl/don-crawler/common"
 	githubapp "github.com/developer-overheid-nl/don-crawler/internal/githubapp"
+	applog "github.com/developer-overheid-nl/don-crawler/internal/logging"
 	"github.com/google/go-github/v90/github"
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 )
 
@@ -38,20 +38,24 @@ func NewGitHubScanner() Scanner {
 
 	provider, err := githubapp.DefaultProvider()
 	if err != nil {
-		log.Fatalf("GitHub API auth: unable to configure GitHub App: %v", err)
+		applog.Event("github_scanner", "configure_auth").
+			WithError(err).
+			Fatal("GitHub App authentication could not be configured")
 	}
 
 	if provider == nil {
-		log.Fatal("GitHub API auth: missing GitHub App env (GIT_OAUTH_CLIENTID/GIT_OAUTH_INSTALLATION_ID/GIT_OAUTH_SECRET)")
+		applog.Event("github_scanner", "configure_auth").Fatal("GitHub App environment is not configured")
 	}
 
-	log.Infof("GitHub API auth: using GitHub App installation token")
+	applog.Event("github_scanner", "configure_auth").
+		WithField("auth_type", "github_app_installation_token").
+		Info("GitHub API authentication configured")
 
 	httpClient = oauth2.NewClient(ctx, provider.TokenSource(ctx))
 
 	client, err := github.NewClient(github.WithHTTPClient(httpClient))
 	if err != nil {
-		log.Fatalf("GitHub API auth: unable to create GitHub client: %v", err)
+		applog.Event("github_scanner", "create_client").WithError(err).Fatal("GitHub client could not be created")
 	}
 
 	return GitHubScanner{client: client, ctx: ctx}
@@ -64,7 +68,7 @@ func NewGitHubScanner() Scanner {
 func (scanner GitHubScanner) ScanGroupOfRepos(
 	url url.URL, publisher common.Publisher, repositories chan common.Repository,
 ) error {
-	log.Debugf("GitHubScanner.ScanGroupOfRepos(%s)", url.String())
+	applog.Event("github_scanner", "scan_group").WithField("source", url.String()).Debug("GitHub group scan started")
 
 	opt := &github.RepositoryListByOrgOptions{}
 
@@ -81,7 +85,10 @@ func (scanner GitHubScanner) ScanGroupOfRepos(
 
 		var rateLimitError *github.RateLimitError
 		if errors.As(err, &rateLimitError) {
-			log.Infof("GitHub rate limit hit, sleeping until %s", resp.Rate.Reset.Time.String())
+			applog.Event("github_scanner", "wait_for_rate_limit").WithFields(map[string]any{
+				"source":              url.String(),
+				applog.FieldResetTime: resp.Rate.Reset.Time,
+			}).Info("GitHub API rate limited; waiting before retry")
 			time.Sleep(time.Until(resp.Rate.Reset.Time))
 
 			goto Retry
@@ -96,20 +103,19 @@ func (scanner GitHubScanner) ScanGroupOfRepos(
 
 		if err != nil {
 			// Try to list repos by user, for backwards compatibility.
-			log.Debugf(
-				"can't list repositories in %s (not an GitHub organization?): %s",
-				url.String(), err.Error(),
-			)
+			applog.Event("github_scanner", "list_organisation_repositories").WithFields(map[string]any{
+				"source":          url.String(),
+				applog.FieldError: err,
+			}).Debug("GitHub organisation repositories could not be listed; trying user repositories")
 
 			repos, resp, err = scanner.client.Repositories.ListByUser(scanner.ctx, orgName, nil)
 			if err != nil {
 				return fmt.Errorf("can't list repositories in %s (not an GitHub organization?): %w", url.String(), err)
 			}
 
-			log.Warnf(
-				"%s is not a GitHub organization, listing repos as GitHub user. This will be removed in the future",
-				url.String(),
-			)
+			applog.Event("github_scanner", "list_user_repositories").
+				WithField("source", url.String()).
+				Warn("GitHub source is not an organisation; listing repos as GitHub user")
 		}
 
 		// Add repositories to the channel that will perform the check on everyone.
@@ -124,23 +130,35 @@ func (scanner GitHubScanner) ScanGroupOfRepos(
 					repoRef = ".github"
 				}
 
-				log.Debugf("Skipping GitHub .github repository: %s", repoRef)
+				applog.Event("github_scanner", "skip_repository").WithFields(map[string]any{
+					applog.FieldRepository: repoRef,
+					applog.FieldReason:     "github_metadata_repository",
+				}).Debug("GitHub repository skipped")
 
 				continue
 			}
 
 			repoURL, err := url.Parse(*r.HTMLURL)
 			if err != nil {
-				log.Errorf("can't parse URL %s: %s", *r.URL, err.Error())
+				applog.Event("github_scanner", "parse_repository_url").WithFields(map[string]any{
+					applog.FieldRepository: *r.URL,
+					applog.FieldError:      err,
+				}).Error("GitHub repository URL could not be parsed")
 
 				continue
 			}
 
 			if err = scanner.ScanRepo(*repoURL, publisher, repositories); err != nil {
 				if errors.Is(err, ErrPubliccodeNotFound) || errors.Is(err, ErrRepositorySkipped) {
-					log.Debugf("can't scan repository %s: %s", repoURL.String(), err.Error())
+					applog.Event("github_scanner", "scan_repository").WithFields(map[string]any{
+						applog.FieldRepository: repoURL.String(),
+						applog.FieldError:      err,
+					}).Debug("GitHub repository scan skipped")
 				} else {
-					log.Errorf("can't scan repository %s: %s", repoURL.String(), err.Error())
+					applog.Event("github_scanner", "scan_repository").WithFields(map[string]any{
+						applog.FieldRepository: repoURL.String(),
+						applog.FieldError:      err,
+					}).Error("GitHub repository scan failed")
 				}
 
 				continue
@@ -164,7 +182,9 @@ func (scanner GitHubScanner) ScanGroupOfRepos(
 func (scanner GitHubScanner) ScanRepo(
 	url url.URL, publisher common.Publisher, repositories chan common.Repository,
 ) error {
-	log.Debugf("GitHubScanner.ScanRepo(%s)", url.String())
+	applog.Event("github_scanner", "scan_repository").
+		WithField(applog.FieldRepository, url.String()).
+		Debug("GitHub repository scan started")
 
 	splitted := strings.Split(strings.Trim(url.Path, "/"), "/")
 	if len(splitted) != 2 {
@@ -173,7 +193,10 @@ func (scanner GitHubScanner) ScanRepo(
 
 	orgName, repoName := splitted[0], splitted[1]
 	if isDotGitHubRepoName(repoName) {
-		log.Debugf("Skipping GitHub .github repository: %s", url.String())
+		applog.Event("github_scanner", "skip_repository").WithFields(map[string]any{
+			applog.FieldRepository: url.String(),
+			applog.FieldReason:     "github_metadata_repository",
+		}).Debug("GitHub repository skipped")
 
 		return nil
 	}
@@ -183,7 +206,10 @@ Retry:
 
 	var rateLimitError *github.RateLimitError
 	if errors.As(err, &rateLimitError) {
-		log.Infof("GitHub rate limit hit, sleeping until %s", resp.Rate.Reset.Time.String())
+		applog.Event("github_scanner", "wait_for_rate_limit").WithFields(map[string]any{
+			applog.FieldRepository: url.String(),
+			applog.FieldResetTime:  resp.Rate.Reset.Time,
+		}).Info("GitHub API rate limited; waiting before retry")
 		time.Sleep(time.Until(resp.Rate.Reset.Time))
 
 		goto Retry
@@ -206,7 +232,10 @@ Retry:
 
 	file, _, resp, err := scanner.client.Repositories.GetContents(scanner.ctx, orgName, repoName, "publiccode.yml", nil)
 	if errors.As(err, &rateLimitError) {
-		log.Infof("GitHub rate limit hit, sleeping until %s", resp.Rate.Reset.Time.String())
+		applog.Event("github_scanner", "wait_for_rate_limit").WithFields(map[string]any{
+			applog.FieldRepository: url.String(),
+			applog.FieldResetTime:  resp.Rate.Reset.Time,
+		}).Info("GitHub API rate limited; waiting before retry")
 		time.Sleep(time.Until(resp.Rate.Reset.Time))
 
 		goto Retry
@@ -226,7 +255,10 @@ Retry:
 		}
 	} else {
 		if file.DownloadURL == nil {
-			log.Warnf("[%s]: failed to get publiccode.yml: not a regular file?", *repo.FullName)
+			applog.Event("github_scanner", "fetch_publiccode").WithFields(map[string]any{
+				applog.FieldRepository: *repo.FullName,
+				applog.FieldReason:     "not_regular_file",
+			}).Warn("publiccode.yml could not be downloaded")
 		} else {
 			fileRawURL = *file.DownloadURL
 		}
@@ -322,7 +354,9 @@ func secondaryRateLimit(err *github.AbuseRateLimitError) {
 		duration = time.Duration(rand.Intn(100)) * time.Second //nolint:gosec
 	}
 
-	log.Infof("GitHub secondary rate limit hit, for %s", duration)
+	applog.Event("github_scanner", "wait_for_secondary_rate_limit").
+		WithField("wait_ms", duration.Milliseconds()).
+		Info("GitHub secondary rate limit reached; waiting before retry")
 	time.Sleep(duration)
 }
 

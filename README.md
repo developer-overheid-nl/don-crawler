@@ -54,7 +54,7 @@ De crawler gebruikt op dit moment de volgende variabelen:
 | `DATADIR`                   | nee                       | Directory voor lokale data en clones. Default: `/app/data`.                         |
 | `ACTIVITY_DAYS`             | nee                       | Aantal dagen voor activity/vitality-bepaling en shallow clone-depth. Default: `60`.  |
 | `CLEANUP_GIT_CLONES`        | nee                       | Verwijder lokale clones na verwerking. Default: `true`.                              |
-| `LOG_LEVEL`                 | nee                       | Logniveau: `panic`, `fatal`, `error`, `warn`, `info`, `debug` of `trace`. Default: `info`. |
+| `LOG_LEVEL`                 | nee                       | Logniveau: `error`, `warn`, `info` of `debug`. Default: `info`.                       |
 | `LOG_FILE`                  | nee                       | Lokaal logbestand; alleen actief met `ENABLE_FILE_LOG=true`.                         |
 | `ENABLE_FILE_LOG`           | nee                       | Zet op `true` om ook naar `LOG_FILE` te schrijven. Default: `false`.                 |
 
@@ -69,6 +69,23 @@ Opmerkingen:
   repositories.
 - Git-operaties lopen via de native `git` CLI in plaats van `go-git`, zodat
   grote packfiles niet in de Go heap worden geladen.
+
+### Logging
+
+Elke logregel is één compact JSON-object op `stdout`. De vaste velden zijn
+`time`, `level`, `msg`, `app`, `component` en `operation`; `app` is altijd
+`oss-register`. Afhankelijk van de gebeurtenis worden contextvelden toegevoegd,
+zoals `repository`, `publisher`, `provider`, `status_code`, `reset_time` en
+`error`. Wachttijden bij rate limits worden als `wait_ms` vastgelegd. Dezelfde
+JSON-regels worden naar `LOG_FILE` geschreven wanneer
+`ENABLE_FILE_LOG=true` is ingesteld.
+
+De waarden van `level` zijn `DEBUG`, `INFO`, `WARN` en `ERROR`, zodat Loki het
+niveau automatisch als `detected_level` kan herkennen. Bijvoorbeeld:
+
+```json
+{"app":"oss-register","component":"crawler","level":"INFO","msg":"Crawler run completed","operation":"complete","time":"2026-08-20T08:15:30.123Z"}
+```
 
 ## Build en run
 

@@ -17,8 +17,8 @@ import (
 	"github.com/developer-overheid-nl/don-crawler/apiclient"
 	"github.com/developer-overheid-nl/don-crawler/common"
 	"github.com/developer-overheid-nl/don-crawler/git"
+	applog "github.com/developer-overheid-nl/don-crawler/internal/logging"
 	"github.com/developer-overheid-nl/don-crawler/scanner"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -87,7 +87,10 @@ func NewCrawler(dryRun bool) *Crawler {
 
 	datadir := viper.GetString("DATADIR")
 	if err := os.MkdirAll(datadir, 0o744); err != nil {
-		log.Fatalf("can't create data directory (%s): %s", datadir, err.Error())
+		applog.Event("crawler", "create_data_directory").WithFields(map[string]any{
+			"data_directory":  datadir,
+			applog.FieldError: err,
+		}).Fatal("Data directory could not be created")
 	}
 
 	// Initiate a channel of repositories.
@@ -159,7 +162,10 @@ func (c *Crawler) CrawlPublishers(publishers []common.Publisher) error {
 		reposNum += len(publisher.Repositories)
 	}
 
-	log.Infof("Scanning %d publishers (%d repositories)", len(publishers), reposNum)
+	applog.Event("crawler", "scan_publishers").WithFields(map[string]any{
+		"publisher_count":  len(publishers),
+		"repository_count": reposNum,
+	}).Info("Publisher scan started")
 
 	publisherJobs := make(chan common.Publisher)
 
@@ -169,7 +175,7 @@ func (c *Crawler) CrawlPublishers(publishers []common.Publisher) error {
 		go func(id int) {
 			defer c.publishersWg.Done()
 
-			log.Debugf("Starting ScanPublisher() goroutine (#%d)", id)
+			applog.Event("crawler", "start_publisher_worker").WithField("worker_id", id).Debug("Publisher worker started")
 
 			for publisher := range publisherJobs {
 				c.ScanPublisher(publisher)
@@ -197,7 +203,10 @@ func (c *Crawler) CrawlPublishers(publishers []common.Publisher) error {
 // ScanPublisher scans all the publisher' repositories and sends any repository
 // with a publiccode.yml to the repositories channel.
 func (c *Crawler) ScanPublisher(publisher common.Publisher) {
-	log.Infof("Processing publisher: %s", publisher.Name)
+	applog.Event("crawler", "scan_publisher").WithFields(map[string]any{
+		applog.FieldPublisher: publisher.Name,
+		"publisher_id":        publisher.ID,
+	}).Info("Publisher scan started")
 
 	var err error
 
@@ -220,9 +229,17 @@ func (c *Crawler) ScanPublisher(publisher common.Publisher) {
 
 	if err != nil {
 		if errors.Is(err, scanner.ErrPubliccodeNotFound) || errors.Is(err, scanner.ErrRepositorySkipped) {
-			log.Debugf("[%s] %s", orgURL.String(), err.Error())
+			applog.Event("crawler", "scan_publisher").WithFields(map[string]any{
+				applog.FieldPublisher: publisher.Name,
+				"source":              orgURL.String(),
+				applog.FieldError:     err,
+			}).Debug("Publisher scan skipped")
 		} else {
-			log.Error(err)
+			applog.Event("crawler", "scan_publisher").WithFields(map[string]any{
+				applog.FieldPublisher: publisher.Name,
+				"source":              orgURL.String(),
+				applog.FieldError:     err,
+			}).Error("Publisher scan failed")
 		}
 	}
 
@@ -246,9 +263,17 @@ func (c *Crawler) ScanPublisher(publisher common.Publisher) {
 
 		if err != nil {
 			if errors.Is(err, scanner.ErrPubliccodeNotFound) || errors.Is(err, scanner.ErrRepositorySkipped) {
-				log.Debugf("[%s] %s", repoURL.String(), err.Error())
+				applog.Event("crawler", "scan_repository").WithFields(map[string]any{
+					applog.FieldPublisher:  publisher.Name,
+					applog.FieldRepository: repoURL.String(),
+					applog.FieldError:      err,
+				}).Debug("Repository scan skipped")
 			} else {
-				log.Error(err)
+				applog.Event("crawler", "scan_repository").WithFields(map[string]any{
+					applog.FieldPublisher:  publisher.Name,
+					applog.FieldRepository: repoURL.String(),
+					applog.FieldError:      err,
+				}).Error("Repository scan failed")
 			}
 		}
 	}
@@ -270,7 +295,10 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 	hasPubliccode := repository.FileRawURL != ""
 
 	if c.DryRun {
-		log.Infof("[%s]: Skipping other steps (--dry-run)", repository.Name)
+		applog.Event("crawler", "process_repository").WithFields(map[string]any{
+			applog.FieldRepository: repository.Name,
+			"dry_run":              true,
+		}).Info("Repository processing stopped after scan")
 
 		return
 	}
@@ -282,7 +310,10 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 	if viper.GetBool("CLEANUP_GIT_CLONES") {
 		defer func() {
 			if err := git.RemoveRepository(repository.URL.Host, repository.Name); err != nil {
-				log.Warnf("[%s] failed to remove local clone: %v", repository.Name, err)
+				applog.Event("crawler", "remove_clone").WithFields(map[string]any{
+					applog.FieldRepository: repository.Name,
+					applog.FieldError:      err,
+				}).Warn("Local repository clone could not be removed")
 			}
 		}()
 	}
@@ -292,7 +323,10 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 			readmeContents, readmeErr := git.ReadReadme(repository)
 			if readmeErr != nil {
 				if !errors.Is(readmeErr, git.ErrReadmeNotFound) {
-					log.Warnf("[%s] failed to read README: %v", repository.Name, readmeErr)
+					applog.Event("crawler", "read_readme").WithFields(map[string]any{
+						applog.FieldRepository: repository.Name,
+						applog.FieldError:      readmeErr,
+					}).Warn("Repository README could not be read")
 				}
 			} else {
 				repository.Description = descriptionFromReadme(readmeContents)
@@ -314,14 +348,13 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 		repoTitle, repoDesc = repoPostDetails(repository)
 	}
 
-	log.Debugf(
-		"[%s] posting repository (title=%q desc=%t publiccode=%t archived=%t)",
-		repository.Name,
-		deref(repoTitle),
-		repoDesc != nil,
-		publiccodeURL != nil,
-		repository.IsArchived,
-	)
+	applog.Event("crawler", "post_repository").WithFields(map[string]any{
+		applog.FieldRepository: repository.Name,
+		"repository_title":     deref(repoTitle),
+		"description_present":  repoDesc != nil,
+		"publiccode_present":   publiccodeURL != nil,
+		"archived":             repository.IsArchived,
+	}).Debug("Repository prepared for API submission")
 
 	lastActivity := c.lastActivityFromGit(repository, cloneErr)
 
@@ -342,7 +375,10 @@ func (c *Crawler) ProcessRepo(repository common.Repository) {
 }
 
 func logPostRepositoryError(repositoryName string, err error) {
-	log.Errorf("[%s] PostRepository failed: %v", repositoryName, err)
+	applog.Event("crawler", "post_repository").WithFields(map[string]any{
+		applog.FieldRepository: repositoryName,
+		applog.FieldError:      err,
+	}).Errorf("[%s] PostRepository failed: %v", repositoryName, err)
 }
 
 func publiccodeGetStatus(ctx context.Context, resourceURL string, headers map[string]string) (int, http.Header, error) {
@@ -430,11 +466,12 @@ func publiccodeGetStatusWithRetry(ctx context.Context, resourceURL string, heade
 		}
 
 		wait := rateLimitWaitFromHeaders(responseHeaders)
-		log.Infof(
-			"publiccode.yml request rate limited (status: %d); waiting %s before retry",
-			statusCode,
-			wait.Round(time.Second),
-		)
+		applog.Event("crawler", "wait_for_publiccode_rate_limit").WithFields(map[string]any{
+			applog.FieldURL:        resourceURL,
+			applog.FieldStatusCode: statusCode,
+			"wait_ms":              wait.Milliseconds(),
+			"attempt":              attempts + 1,
+		}).Info("publiccode.yml request rate limited; waiting before retry")
 
 		select {
 		case <-ctx.Done():
@@ -447,7 +484,9 @@ func publiccodeGetStatusWithRetry(ctx context.Context, resourceURL string, heade
 
 func (c *Crawler) ensurePubliccodeFile(ctx context.Context, repository *common.Repository) {
 	if repository.FileRawURL == "" {
-		log.Debugf("[%s] publiccode.yml not found", repository.Name)
+		applog.Event("crawler", "check_publiccode").
+			WithField(applog.FieldRepository, repository.Name).
+			Debugf("[%s] publiccode.yml not found", repository.Name)
 
 		return
 	}
@@ -455,22 +494,38 @@ func (c *Crawler) ensurePubliccodeFile(ctx context.Context, repository *common.R
 	statusCode, err := publiccodeGetStatusWithRetry(ctx, repository.FileRawURL, repository.Headers)
 
 	if statusCode == http.StatusOK && err == nil {
-		log.Debugf("[%s] publiccode.yml found at %s", repository.Name, repository.FileRawURL)
+		applog.Event("crawler", "check_publiccode").WithFields(map[string]any{
+			applog.FieldRepository: repository.Name,
+			"publiccode_url":       repository.FileRawURL,
+			applog.FieldStatusCode: statusCode,
+		}).Debugf("[%s] publiccode.yml found at %s", repository.Name, repository.FileRawURL)
 
 		return
 	}
 
 	if err != nil {
-		log.Warnf("[%s] publiccode.yml request failed: %v", repository.Name, err)
+		applog.Event("crawler", "check_publiccode").WithFields(map[string]any{
+			applog.FieldRepository: repository.Name,
+			applog.FieldURL:        repository.FileRawURL,
+			applog.FieldError:      err,
+		}).Warnf("[%s] publiccode.yml request failed: %v", repository.Name, err)
 		repository.FileRawURL = ""
 
 		return
 	}
 
 	if statusCode == http.StatusNotFound {
-		log.Debugf("[%s] publiccode.yml not reachable (status: %d)", repository.Name, statusCode)
+		applog.Event("crawler", "check_publiccode").WithFields(map[string]any{
+			applog.FieldRepository: repository.Name,
+			applog.FieldURL:        repository.FileRawURL,
+			applog.FieldStatusCode: statusCode,
+		}).Debugf("[%s] publiccode.yml not reachable (status: %d)", repository.Name, statusCode)
 	} else {
-		log.Warnf(
+		applog.Event("crawler", "check_publiccode").WithFields(map[string]any{
+			applog.FieldRepository: repository.Name,
+			applog.FieldURL:        repository.FileRawURL,
+			applog.FieldStatusCode: statusCode,
+		}).Warnf(
 			"[%s] publiccode.yml not reachable (status: %d), continuing without it",
 			repository.Name,
 			statusCode,
@@ -513,9 +568,17 @@ func (c *Crawler) lastActivityFromAPI(repository common.Repository) (time.Time, 
 	if apiErr != nil {
 		var rateLimitErr scanner.RateLimitError
 		if errors.As(apiErr, &rateLimitErr) {
-			log.Infof("[%s] %s", repository.Name, rateLimitErr.Error())
+			applog.Event("crawler", "determine_last_activity").WithFields(map[string]any{
+				applog.FieldRepository: repository.Name,
+				"provider":             rateLimitErr.Provider,
+				applog.FieldResetTime:  rateLimitErr.Reset,
+				applog.FieldError:      apiErr,
+			}).Infof("[%s] %s", repository.Name, rateLimitErr.Error())
 		} else {
-			log.Debugf("[%s] last commit via API failed: %v", repository.Name, apiErr)
+			applog.Event("crawler", "determine_last_activity").WithFields(map[string]any{
+				applog.FieldRepository: repository.Name,
+				applog.FieldError:      apiErr,
+			}).Debugf("[%s] last commit via API failed: %v", repository.Name, apiErr)
 		}
 	}
 
@@ -528,38 +591,53 @@ func (c *Crawler) cloneAndLogActivity(
 ) error {
 	// Calculate Repository activity index and vitality. Defaults to 60 days.
 	if cloneURL == "" {
-		log.Warnf("[%s] unable to determine clone URL", repository.Name)
+		applog.Event("crawler", "clone_repository").
+			WithField(applog.FieldRepository, repository.Name).
+			Warnf("[%s] unable to determine clone URL", repository.Name)
 
 		return errors.New("clone URL empty")
 	}
 
 	unlock := c.repoLocks.lock(repoLockKey(repository))
 
-	log.Debugf("[%s] cloning %s", repository.Name, cloneURL)
+	applog.Event("crawler", "clone_repository").WithFields(map[string]any{
+		applog.FieldRepository: repository.Name,
+		"clone_url":            cloneURL,
+	}).Debug("Repository clone started")
 	err := git.CloneRepository(repository.URL.Host, repository.Name, cloneURL, repository.GitBranch)
 
 	unlock()
 
 	if err != nil {
-		log.Warnf("[%s] error while cloning: %v", repository.Name, err)
+		applog.Event("crawler", "clone_repository").WithFields(map[string]any{
+			applog.FieldRepository: repository.Name,
+			"clone_url":            cloneURL,
+			applog.FieldError:      err,
+		}).Warn("Repository clone failed")
 
 		return err
 	}
 
 	activityDays := activityDays()
 
-	log.Debugf("[%s] calculating activity for the last %d days", repository.Name, activityDays)
+	applog.Event("crawler", "calculate_activity").WithFields(map[string]any{
+		applog.FieldRepository:   repository.Name,
+		applog.FieldActivityDays: activityDays,
+	}).Debug("Repository activity calculation started")
 
 	activityIndex, _, err := git.CalculateRepoActivity(repository, activityDays)
 	if err != nil {
-		log.Warnf("[%s] error calculating activity index: %v", repository.Name, err)
+		applog.Event("crawler", "calculate_activity").WithFields(map[string]any{
+			applog.FieldRepository:   repository.Name,
+			applog.FieldActivityDays: activityDays,
+			applog.FieldError:        err,
+		}).Warn("Repository activity index could not be calculated")
 	} else {
-		log.Debugf(
-			"[%s] activity index in the last %d days: %f",
-			repository.Name,
-			activityDays,
-			activityIndex,
-		)
+		applog.Event("crawler", "calculate_activity").WithFields(map[string]any{
+			applog.FieldRepository:   repository.Name,
+			applog.FieldActivityDays: activityDays,
+			"activity_index":         activityIndex,
+		}).Debug("Repository activity index calculated")
 	}
 
 	return err
@@ -584,7 +662,10 @@ func (c *Crawler) lastActivityFromGit(
 		}
 	}
 
-	log.Warnf(
+	applog.Event("crawler", "determine_last_activity").WithFields(map[string]any{
+		applog.FieldRepository: repository.Name,
+		applog.FieldError:      lastErr,
+	}).Warnf(
 		"[%s] unable to determine last activity: %v; falling back to repository updated timestamp",
 		repository.Name,
 		lastErr,
@@ -646,14 +727,16 @@ func (c *Crawler) crawl() error {
 
 	defer c.publishersWg.Wait()
 
-	log.Debugf("Repository workers: %d", repositoryWorkerCount)
+	applog.Event("crawler", "start_repository_workers").
+		WithField("worker_count", repositoryWorkerCount).
+		Debug("Repository workers configured")
 
 	// Process the repositories in order to retrieve the files.
 	for i := range repositoryWorkerCount {
 		c.repositoriesWg.Add(1)
 
 		go func(id int) {
-			log.Debugf("Starting ProcessRepositories() goroutine (#%d)", id)
+			applog.Event("crawler", "start_repository_worker").WithField("worker_id", id).Debug("Repository worker started")
 			c.ProcessRepositories(reposChan)
 		}(i)
 	}
@@ -665,7 +748,7 @@ func (c *Crawler) crawl() error {
 	close(reposChan)
 	c.repositoriesWg.Wait()
 
-	log.Info("Crawler run completed")
+	applog.Event("crawler", "complete").Info("Crawler run completed")
 
 	return nil
 }

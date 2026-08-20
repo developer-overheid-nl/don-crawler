@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/developer-overheid-nl/don-crawler/common"
-	log "github.com/sirupsen/logrus"
+	applog "github.com/developer-overheid-nl/don-crawler/internal/logging"
 	gitlab "gitlab.com/gitlab-org/api/client-go"
 )
 
@@ -96,8 +96,12 @@ func gitlabCallWithRateLimitRetry[T any](
 		}
 
 		wait := gitlabRateLimitWait(reset)
-		log.Infof("GitLab API rate limited during %s; waiting %s before retry (attempt %d/%d)",
-			operation, wait.Round(time.Second), attempt+1, maxGitLabRateLimitRetries)
+		applog.Event("gitlab_scanner", "wait_for_rate_limit").WithFields(map[string]any{
+			"api_operation": operation,
+			"wait_ms":       wait.Milliseconds(),
+			"attempt":       attempt + 1,
+			"max_attempts":  maxGitLabRateLimitRetries,
+		}).Info("GitLab API rate limited; waiting before retry")
 
 		// Use context-aware sleep
 		select {
@@ -116,7 +120,7 @@ func gitlabCallWithRateLimitRetry[T any](
 func (scanner GitLabScanner) ScanGroupOfRepos(
 	url url.URL, publisher common.Publisher, repositories chan common.Repository,
 ) error {
-	log.Debugf("GitLabScanner.ScanGroupOfRepos(%s)", url.String())
+	applog.Event("gitlab_scanner", "scan_group").WithField("source", url.String()).Debug("GitLab group scan started")
 
 	git, err := newGitlabClient(url)
 	if err != nil {
@@ -178,7 +182,9 @@ func (scanner GitLabScanner) ScanGroupOfRepos(
 func (scanner GitLabScanner) ScanRepo(
 	url url.URL, publisher common.Publisher, repositories chan common.Repository,
 ) error {
-	log.Debugf("GitLabScanner.ScanRepo(%s)", url.String())
+	applog.Event("gitlab_scanner", "scan_repository").
+		WithField(applog.FieldRepository, url.String()).
+		Debug("GitLab repository scan started")
 
 	git, err := newGitlabClient(url)
 	if err != nil {
