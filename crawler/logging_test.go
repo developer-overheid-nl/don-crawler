@@ -3,7 +3,6 @@ package crawler
 import (
 	"context"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,47 +10,32 @@ import (
 	"time"
 
 	"github.com/developer-overheid-nl/don-crawler/common"
-	log "github.com/sirupsen/logrus"
-	logtest "github.com/sirupsen/logrus/hooks/test"
+	"github.com/developer-overheid-nl/don-crawler/internal/loggingtest"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func captureCrawlerLogs(t *testing.T) *logtest.Hook {
+func captureCrawlerLogs(t *testing.T) *loggingtest.Recorder {
 	t.Helper()
 
-	logger := log.StandardLogger()
-	originalLevel := logger.GetLevel()
-	originalOutput := logger.Out
-	originalHooks := logger.ReplaceHooks(make(log.LevelHooks))
-	logger.SetLevel(log.DebugLevel)
-	logger.SetOutput(io.Discard)
-	hook := logtest.NewGlobal()
-
-	t.Cleanup(func() {
-		logger.SetLevel(originalLevel)
-		logger.SetOutput(originalOutput)
-		logger.ReplaceHooks(originalHooks)
-	})
-
-	return hook
+	return loggingtest.Capture(t, "debug")
 }
 
 func TestEnsurePubliccodeFileLogsExpectedAbsenceOnceAtDebug(t *testing.T) {
-	hook := captureCrawlerLogs(t)
+	recorder := captureCrawlerLogs(t)
 	repository := common.Repository{Name: "owner/repository"}
 
 	new(Crawler).ensurePubliccodeFile(context.Background(), &repository)
 
-	entries := hook.AllEntries()
-	require.Len(t, entries, 1)
-	assert.Equal(t, log.DebugLevel, entries[0].Level)
-	assert.Contains(t, entries[0].Message, "publiccode.yml not found")
+	events := recorder.Events(t)
+	require.Len(t, events, 1)
+	assert.Equal(t, "DEBUG", events[0]["level"])
+	assert.Contains(t, events[0]["msg"], "publiccode.yml not found")
 }
 
 func TestEnsurePubliccodeFileLogsNotFoundResponseOnceAtDebug(t *testing.T) {
-	hook := captureCrawlerLogs(t)
+	recorder := captureCrawlerLogs(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
@@ -60,15 +44,15 @@ func TestEnsurePubliccodeFileLogsNotFoundResponseOnceAtDebug(t *testing.T) {
 
 	new(Crawler).ensurePubliccodeFile(context.Background(), &repository)
 
-	entries := hook.AllEntries()
-	require.Len(t, entries, 1)
-	assert.Equal(t, log.DebugLevel, entries[0].Level)
-	assert.Contains(t, entries[0].Message, "status: 404")
+	events := recorder.Events(t)
+	require.Len(t, events, 1)
+	assert.Equal(t, "DEBUG", events[0]["level"])
+	assert.Contains(t, events[0]["msg"], "status: 404")
 	assert.Empty(t, repository.FileRawURL)
 }
 
 func TestEnsurePubliccodeFileLogsServerFailureOnceAtWarning(t *testing.T) {
-	hook := captureCrawlerLogs(t)
+	recorder := captureCrawlerLogs(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 	}))
@@ -77,15 +61,15 @@ func TestEnsurePubliccodeFileLogsServerFailureOnceAtWarning(t *testing.T) {
 
 	new(Crawler).ensurePubliccodeFile(context.Background(), &repository)
 
-	entries := hook.AllEntries()
-	require.Len(t, entries, 1)
-	assert.Equal(t, log.WarnLevel, entries[0].Level)
-	assert.Contains(t, entries[0].Message, "status: 502")
+	events := recorder.Events(t)
+	require.Len(t, events, 1)
+	assert.Equal(t, "WARN", events[0]["level"])
+	assert.Contains(t, events[0]["msg"], "status: 502")
 	assert.Empty(t, repository.FileRawURL)
 }
 
 func TestEnsurePubliccodeFileLogsRequestFailureOnceAtWarning(t *testing.T) {
-	hook := captureCrawlerLogs(t)
+	recorder := captureCrawlerLogs(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	repository := common.Repository{
@@ -95,15 +79,15 @@ func TestEnsurePubliccodeFileLogsRequestFailureOnceAtWarning(t *testing.T) {
 
 	new(Crawler).ensurePubliccodeFile(ctx, &repository)
 
-	entries := hook.AllEntries()
-	require.Len(t, entries, 1)
-	assert.Equal(t, log.WarnLevel, entries[0].Level)
-	assert.Contains(t, entries[0].Message, "request failed")
+	events := recorder.Events(t)
+	require.Len(t, events, 1)
+	assert.Equal(t, "WARN", events[0]["level"])
+	assert.Contains(t, events[0]["msg"], "request failed")
 	assert.Empty(t, repository.FileRawURL)
 }
 
 func TestEnsurePubliccodeFileLogsFoundFileAtDebug(t *testing.T) {
-	hook := captureCrawlerLogs(t)
+	recorder := captureCrawlerLogs(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -112,28 +96,28 @@ func TestEnsurePubliccodeFileLogsFoundFileAtDebug(t *testing.T) {
 
 	new(Crawler).ensurePubliccodeFile(context.Background(), &repository)
 
-	entries := hook.AllEntries()
-	require.Len(t, entries, 1)
-	assert.Equal(t, log.DebugLevel, entries[0].Level)
-	assert.Contains(t, entries[0].Message, "publiccode.yml found")
+	events := recorder.Events(t)
+	require.Len(t, events, 1)
+	assert.Equal(t, "DEBUG", events[0]["level"])
+	assert.Contains(t, events[0]["msg"], "publiccode.yml found")
 	assert.Equal(t, server.URL, repository.FileRawURL)
 }
 
 func TestCloneAndLogActivityLogsFailureOnceAtWarning(t *testing.T) {
-	hook := captureCrawlerLogs(t)
+	recorder := captureCrawlerLogs(t)
 	repository := common.Repository{Name: "owner/repository"}
 
 	err := new(Crawler).cloneAndLogActivity(repository, "")
 
 	require.Error(t, err)
-	entries := hook.AllEntries()
-	require.Len(t, entries, 1)
-	assert.Equal(t, log.WarnLevel, entries[0].Level)
-	assert.Contains(t, entries[0].Message, "unable to determine clone URL")
+	events := recorder.Events(t)
+	require.Len(t, events, 1)
+	assert.Equal(t, "WARN", events[0]["level"])
+	assert.Contains(t, events[0]["msg"], "unable to determine clone URL")
 }
 
 func TestLastActivityFromGitLogsFallbackOnceAtWarning(t *testing.T) {
-	hook := captureCrawlerLogs(t)
+	recorder := captureCrawlerLogs(t)
 	viper.Set("DATADIR", t.TempDir())
 	t.Cleanup(viper.Reset)
 	updatedAt := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
@@ -146,21 +130,21 @@ func TestLastActivityFromGitLogsFallbackOnceAtWarning(t *testing.T) {
 	lastActivity := new(Crawler).lastActivityFromGit(repository, errors.New("clone failed"))
 
 	assert.Equal(t, updatedAt, lastActivity)
-	entries := hook.AllEntries()
-	require.Len(t, entries, 2)
-	assert.Equal(t, log.DebugLevel, entries[0].Level)
-	assert.Equal(t, log.WarnLevel, entries[1].Level)
-	assert.Contains(t, entries[1].Message, "falling back to repository updated timestamp")
+	events := recorder.Events(t)
+	require.Len(t, events, 2)
+	assert.Equal(t, "DEBUG", events[0]["level"])
+	assert.Equal(t, "WARN", events[1]["level"])
+	assert.Contains(t, events[1]["msg"], "falling back to repository updated timestamp")
 }
 
 func TestLogPostRepositoryErrorEmitsSingleError(t *testing.T) {
-	hook := captureCrawlerLogs(t)
+	recorder := captureCrawlerLogs(t)
 
 	logPostRepositoryError("owner/repository", errors.New("API rejected repository"))
 
-	entries := hook.AllEntries()
-	require.Len(t, entries, 1)
-	assert.Equal(t, log.ErrorLevel, entries[0].Level)
-	assert.Contains(t, entries[0].Message, "[owner/repository]")
-	assert.Contains(t, entries[0].Message, "API rejected repository")
+	events := recorder.Events(t)
+	require.Len(t, events, 1)
+	assert.Equal(t, "ERROR", events[0]["level"])
+	assert.Contains(t, events[0]["msg"], "[owner/repository]")
+	assert.Contains(t, events[0]["msg"], "API rejected repository")
 }

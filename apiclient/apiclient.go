@@ -16,8 +16,8 @@ import (
 
 	"github.com/developer-overheid-nl/don-crawler/common"
 	internalUrl "github.com/developer-overheid-nl/don-crawler/internal"
+	applog "github.com/developer-overheid-nl/don-crawler/internal/logging"
 	"github.com/hashicorp/go-retryablehttp"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
@@ -76,12 +76,15 @@ func NewClient() APIClient {
 		if fetched, err := tokenFetcher.Fetch(context.Background()); err == nil && fetched != "" {
 			token = "Bearer " + fetched
 
-			log.Debugf("Fetched bearer token via KeycloakTokenFetcher")
+			applog.Event("api_client", "authenticate").WithField("source", "keycloak").Debug("Bearer token fetched")
 		} else if err != nil {
-			log.Warnf("API_BEARER_TOKEN not set and Keycloak fetch failed: %v", err)
+			applog.Event("api_client", "authenticate").WithFields(map[string]any{
+				"source":          "keycloak",
+				applog.FieldError: err,
+			}).Warn("Bearer token could not be fetched")
 		}
 	} else {
-		log.Debug("API authentication is not configured")
+		applog.Event("api_client", "authenticate").Debug("API authentication is not configured")
 	}
 
 	return APIClient{
@@ -202,7 +205,12 @@ func (clt APIClient) GetGitOrganisations() ([]common.Publisher, error) {
 			return nil, fmt.Errorf("can't get gitOrganisations %s: %w", reqURL, err)
 		}
 
-		log.Debugf("GET %s -> %s (rl-rem=%s)", reqURL, res.Status, res.Header.Get("RateLimit-Remaining"))
+		applog.Event("api_client", "get_git_organisations").WithFields(map[string]any{
+			applog.FieldMethod:     http.MethodGet,
+			applog.FieldURL:        reqURL,
+			applog.FieldStatusCode: res.StatusCode,
+			"rate_limit_remaining": res.Header.Get("RateLimit-Remaining"),
+		}).Debug("API request completed")
 
 		if res.StatusCode < 200 || res.StatusCode > 299 {
 			res.Body.Close()
@@ -310,21 +318,17 @@ func (clt APIClient) PostRepository(
 		return nil, fmt.Errorf("can't build repository URL: %w", err)
 	}
 
-	log.Debugf(
-		"POST %s (repoUrl=%s name=%s descPresent=%t publiccode=%t isFork=%t archived=%t orgUri=%s)",
-		endpoint,
-		repoURL,
-		deref(name),
-		description != nil,
-		publiccodeYml != nil,
-		derefBool(isFork),
-		derefBool(archived),
-		organisationURI,
-	)
-
-	if log.IsLevelEnabled(log.TraceLevel) {
-		log.Tracef("POST %s payload=%s", endpoint, strings.TrimSpace(string(body)))
-	}
+	applog.Event("api_client", "post_repository").WithFields(map[string]any{
+		applog.FieldMethod:     http.MethodPost,
+		applog.FieldURL:        endpoint,
+		applog.FieldRepository: repoURL,
+		"repository_name":      deref(name),
+		"description_present":  description != nil,
+		"publiccode_present":   publiccodeYml != nil,
+		"is_fork":              derefBool(isFork),
+		"archived":             derefBool(archived),
+		"organisation":         organisationURI,
+	}).Debug("API request prepared")
 
 	res, err := clt.Post(endpoint, body)
 	if err != nil {
@@ -333,7 +337,12 @@ func (clt APIClient) PostRepository(
 
 	defer res.Body.Close()
 
-	log.Debugf("POST %s -> %s (rl-rem=%s)", endpoint, res.Status, res.Header.Get("RateLimit-Remaining"))
+	applog.Event("api_client", "post_repository").WithFields(map[string]any{
+		applog.FieldMethod:     http.MethodPost,
+		applog.FieldURL:        endpoint,
+		applog.FieldStatusCode: res.StatusCode,
+		"rate_limit_remaining": res.Header.Get("RateLimit-Remaining"),
+	}).Debug("API request completed")
 
 	if res.StatusCode < 200 || res.StatusCode > 299 {
 		respBody, _ := io.ReadAll(res.Body)

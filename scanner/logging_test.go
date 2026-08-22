@@ -4,38 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
 
 	"github.com/developer-overheid-nl/don-crawler/common"
+	"github.com/developer-overheid-nl/don-crawler/internal/loggingtest"
 	"github.com/google/go-github/v90/github"
-	log "github.com/sirupsen/logrus"
-	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func captureScannerLogs(t *testing.T) *logtest.Hook {
+func captureScannerLogs(t *testing.T) *loggingtest.Recorder {
 	t.Helper()
 
-	logger := log.StandardLogger()
-	originalLevel := logger.GetLevel()
-	originalOutput := logger.Out
-	originalHooks := logger.ReplaceHooks(make(log.LevelHooks))
-	logger.SetLevel(log.DebugLevel)
-	logger.SetOutput(io.Discard)
-	hook := logtest.NewGlobal()
-
-	t.Cleanup(func() {
-		logger.SetLevel(originalLevel)
-		logger.SetOutput(originalOutput)
-		logger.ReplaceHooks(originalHooks)
-	})
-
-	return hook
+	return loggingtest.Capture(t, "debug")
 }
 
 func githubScannerForServer(t *testing.T, server *httptest.Server) GitHubScanner {
@@ -52,7 +36,7 @@ func githubScannerForServer(t *testing.T, server *httptest.Server) GitHubScanner
 }
 
 func TestGitHubUserFallbackLogsOnlyDeprecationAtWarning(t *testing.T) {
-	hook := captureScannerLogs(t)
+	recorder := captureScannerLogs(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/orgs/octocat/repos":
@@ -74,10 +58,10 @@ func TestGitHubUserFallbackLogsOnlyDeprecationAtWarning(t *testing.T) {
 
 	require.NoError(t, err)
 	var warningEntries int
-	for _, entry := range hook.AllEntries() {
-		if entry.Level == log.WarnLevel {
+	for _, event := range recorder.Events(t) {
+		if event["level"] == "WARN" {
 			warningEntries++
-			assert.Contains(t, entry.Message, "listing repos as GitHub user")
+			assert.Contains(t, event["msg"], "listing repos as GitHub user")
 		}
 	}
 	assert.Equal(t, 1, warningEntries)
@@ -106,7 +90,7 @@ func TestGitHubPrivateRepositoryReturnsExpectedSkip(t *testing.T) {
 }
 
 func TestGitHubMissingPubliccodeDoesNotLogWarning(t *testing.T) {
-	hook := captureScannerLogs(t)
+	recorder := captureScannerLogs(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/example/public":
@@ -135,7 +119,7 @@ func TestGitHubMissingPubliccodeDoesNotLogWarning(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, repositories, 1)
-	for _, entry := range hook.AllEntries() {
-		assert.NotEqual(t, log.WarnLevel, entry.Level)
+	for _, event := range recorder.Events(t) {
+		assert.NotEqual(t, "WARN", event["level"])
 	}
 }

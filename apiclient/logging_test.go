@@ -1,37 +1,20 @@
 package apiclient
 
 import (
-	"bytes"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-	logtest "github.com/sirupsen/logrus/hooks/test"
+	"github.com/developer-overheid-nl/don-crawler/internal/loggingtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func captureAPIClientLogs(t *testing.T, level log.Level) *logtest.Hook {
+func captureAPIClientLogs(t *testing.T, level string) *loggingtest.Recorder {
 	t.Helper()
 
-	logger := log.StandardLogger()
-	originalLevel := logger.GetLevel()
-	originalOutput := logger.Out
-	originalHooks := logger.ReplaceHooks(make(log.LevelHooks))
-	logger.SetLevel(level)
-	logger.SetOutput(io.Discard)
-	hook := logtest.NewGlobal()
-
-	t.Cleanup(func() {
-		logger.SetLevel(originalLevel)
-		logger.SetOutput(originalOutput)
-		logger.ReplaceHooks(originalHooks)
-	})
-
-	return hook
+	return loggingtest.Capture(t, level)
 }
 
 func clearKeycloakEnvironment(t *testing.T) {
@@ -44,15 +27,15 @@ func clearKeycloakEnvironment(t *testing.T) {
 }
 
 func TestNewClientLogsMissingOptionalAuthenticationAtDebug(t *testing.T) {
-	hook := captureAPIClientLogs(t, log.DebugLevel)
+	recorder := captureAPIClientLogs(t, "debug")
 	clearKeycloakEnvironment(t)
 
 	NewClient()
 
-	entries := hook.AllEntries()
-	require.Len(t, entries, 1)
-	assert.Equal(t, log.DebugLevel, entries[0].Level)
-	assert.Contains(t, entries[0].Message, "authentication is not configured")
+	events := recorder.Events(t)
+	require.Len(t, events, 1)
+	assert.Equal(t, "DEBUG", events[0]["level"])
+	assert.Contains(t, events[0]["msg"], "authentication is not configured")
 }
 
 func TestNewRetryableClientDisablesDefaultLogger(t *testing.T) {
@@ -62,7 +45,7 @@ func TestNewRetryableClientDisablesDefaultLogger(t *testing.T) {
 }
 
 func TestPostRepositoryDoesNotLogPayloadAtDebug(t *testing.T) {
-	hook := captureAPIClientLogs(t, log.DebugLevel)
+	recorder := captureAPIClientLogs(t, "debug")
 	client, closeServer := successfulRepositoryAPIClient(t)
 	t.Cleanup(closeServer)
 
@@ -80,13 +63,13 @@ func TestPostRepositoryDoesNotLogPayloadAtDebug(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	for _, entry := range hook.AllEntries() {
-		assert.NotContains(t, entry.Message, "payload=")
+	for _, event := range recorder.Events(t) {
+		assert.NotContains(t, event["msg"], "payload=")
 	}
 }
 
-func TestPostRepositoryLogsPayloadAtTrace(t *testing.T) {
-	hook := captureAPIClientLogs(t, log.TraceLevel)
+func TestPostRepositoryDoesNotLogPayloadAsStructuredField(t *testing.T) {
+	recorder := captureAPIClientLogs(t, "debug")
 	client, closeServer := successfulRepositoryAPIClient(t)
 	t.Cleanup(closeServer)
 
@@ -104,15 +87,9 @@ func TestPostRepositoryLogsPayloadAtTrace(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	var payloadEntry *log.Entry
-	for _, entry := range hook.AllEntries() {
-		if bytes.Contains([]byte(entry.Message), []byte("payload=")) {
-			payloadEntry = entry
-			break
-		}
+	for _, event := range recorder.Events(t) {
+		assert.NotContains(t, event, "payload")
 	}
-	require.NotNil(t, payloadEntry)
-	assert.Equal(t, log.TraceLevel, payloadEntry.Level)
 }
 
 func TestJoinPathReturnsInvalidBaseURLToCaller(t *testing.T) {

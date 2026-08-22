@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/developer-overheid-nl/don-crawler/common"
+	applog "github.com/developer-overheid-nl/don-crawler/internal/logging"
 	"github.com/ktrysmt/go-bitbucket"
-	log "github.com/sirupsen/logrus"
 )
 
 type BitBucketScanner struct {
@@ -42,7 +42,7 @@ const defaultBitbucketAPIBaseURL = "https://api.bitbucket.org/2.0"
 func (scanner BitBucketScanner) ScanGroupOfRepos(
 	url url.URL, publisher common.Publisher, repositories chan common.Repository,
 ) error {
-	log.Debugf("BitBucketScanner.ScanGroupOfRepos(%s)", url.String())
+	applog.Event("bitbucket_scanner", "scan_group").WithField("source", url.String()).Debug("Bitbucket group scan started")
 
 	splitted := strings.Split(strings.Trim(url.Path, "/"), "/")
 
@@ -63,7 +63,10 @@ func (scanner BitBucketScanner) ScanGroupOfRepos(
 
 	for _, r := range res.Items {
 		if r.Is_private {
-			log.Debugf("Skipping %s: repo is private", r.Full_name)
+			applog.Event("bitbucket_scanner", "skip_repository").WithFields(map[string]any{
+				applog.FieldRepository: r.Full_name,
+				applog.FieldReason:     "private",
+			}).Debug("Bitbucket repository skipped")
 
 			continue
 		}
@@ -77,7 +80,10 @@ func (scanner BitBucketScanner) ScanGroupOfRepos(
 
 		res, err := scanner.client.Repositories.Repository.GetFileContent(opt)
 		if err != nil {
-			log.Debugf("[%s]: no publiccode.yml: %s", r.Full_name, err.Error())
+			applog.Event("bitbucket_scanner", "fetch_publiccode").WithFields(map[string]any{
+				applog.FieldRepository: r.Full_name,
+				applog.FieldError:      err,
+			}).Debug("publiccode.yml not found")
 
 			continue
 		}
@@ -112,7 +118,9 @@ func (scanner BitBucketScanner) ScanGroupOfRepos(
 func (scanner BitBucketScanner) ScanRepo(
 	url url.URL, publisher common.Publisher, repositories chan common.Repository,
 ) error {
-	log.Debugf("BitBucketScanner.ScanRepo(%s)", url.String())
+	applog.Event("bitbucket_scanner", "scan_repository").
+		WithField(applog.FieldRepository, url.String()).
+		Debug("Bitbucket repository scan started")
 
 	splitted := strings.Split(strings.Trim(url.Path, "/"), "/")
 	if len(splitted) != 2 {
@@ -182,7 +190,10 @@ func bitbucketRepositoryIsFork(repo *bitbucket.Repository) bool {
 func (scanner BitBucketScanner) bitbucketRepositoryIsArchived(owner, slug string) bool {
 	archived, err := bitbucketRepositoryArchiveStatus(context.Background(), scanner.client.HttpClient, owner, slug)
 	if err != nil {
-		log.Warnf("failed to get Bitbucket archived status for %s/%s: %v", owner, slug, err)
+		applog.Event("bitbucket_scanner", "fetch_archived_status").WithFields(map[string]any{
+			applog.FieldRepository: owner + "/" + slug,
+			applog.FieldError:      err,
+		}).Warn("Bitbucket archived status could not be determined")
 
 		return false
 	}

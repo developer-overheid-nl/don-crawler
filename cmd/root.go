@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	log "github.com/sirupsen/logrus"
+	applog "github.com/developer-overheid-nl/don-crawler/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +15,7 @@ Complete documentation is available at https://github.com/italia/publiccode-craw
 		Run: func(cmd *cobra.Command, _ []string) {
 			err := cmd.Help()
 			if err != nil {
-				log.Fatal(err)
+				applog.Event("command", "show_help").WithError(err).Fatal("Command help could not be shown")
 			}
 		},
 	}

@@ -2,7 +2,6 @@ package git
 
 import (
 	"errors"
-	"io"
 	"net/url"
 	"os"
 	"os/exec"
@@ -10,14 +9,13 @@ import (
 	"testing"
 
 	"github.com/developer-overheid-nl/don-crawler/common"
-	log "github.com/sirupsen/logrus"
-	logtest "github.com/sirupsen/logrus/hooks/test"
+	"github.com/developer-overheid-nl/don-crawler/internal/loggingtest"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCalculateRepoActivityReturnsSnapshotErrorWithoutContextlessLog(t *testing.T) {
-	hook := captureRepoActivityLogs(t)
+	recorder := captureRepoActivityLogs(t)
 
 	dataDir := t.TempDir()
 	viper.Set("DATADIR", dataDir)
@@ -31,11 +29,11 @@ func TestCalculateRepoActivityReturnsSnapshotErrorWithoutContextlessLog(t *testi
 	_, _, err := CalculateRepoActivity(repository, 60)
 
 	require.Error(t, err)
-	require.Empty(t, hook.AllEntries())
+	require.Empty(t, recorder.Events(t))
 }
 
 func TestCalculateRepoActivityLogsPartialCalculationWarningWithRepositoryContext(t *testing.T) {
-	hook := captureRepoActivityLogs(t)
+	recorder := captureRepoActivityLogs(t)
 	dataDir := t.TempDir()
 	viper.Set("DATADIR", dataDir)
 	repositoryPath := filepath.Join(dataDir, "repos", "github.com", "owner", "repository", "gitClone")
@@ -55,15 +53,15 @@ func TestCalculateRepoActivityLogsPartialCalculationWarningWithRepositoryContext
 	_, _, err = CalculateRepoActivity(repository, 60)
 
 	require.NoError(t, err)
-	entries := hook.AllEntries()
-	require.Len(t, entries, 1)
-	require.Equal(t, log.WarnLevel, entries[0].Level)
-	require.Contains(t, entries[0].Message, "[owner/repository]")
-	require.Contains(t, entries[0].Message, "longevity unavailable")
+	events := recorder.Events(t)
+	require.Len(t, events, 1)
+	require.Equal(t, "WARN", events[0]["level"])
+	require.Contains(t, events[0]["msg"], "[owner/repository]")
+	require.Contains(t, events[0]["msg"], "longevity unavailable")
 }
 
 func TestCalculateRepoActivityReturnsRangesErrorWithoutContextlessLog(t *testing.T) {
-	hook := captureRepoActivityLogs(t)
+	recorder := captureRepoActivityLogs(t)
 	dataDir := t.TempDir()
 	viper.Set("DATADIR", dataDir)
 	repositoryPath := filepath.Join(dataDir, "repos", "github.com", "owner", "repository", "gitClone")
@@ -83,40 +81,31 @@ func TestCalculateRepoActivityReturnsRangesErrorWithoutContextlessLog(t *testing
 	_, _, err = CalculateRepoActivity(repository, 60)
 
 	require.ErrorContains(t, err, "load vitality ranges")
-	require.Empty(t, hook.AllEntries())
+	require.Empty(t, recorder.Events(t))
 }
 
 func TestLogPartialActivityErrorEmitsContextualWarning(t *testing.T) {
-	hook := captureRepoActivityLogs(t)
+	recorder := captureRepoActivityLogs(t)
 
 	logPartialActivityError("owner/repository", "tag activity", errors.New("invalid tag reference"))
 
-	entries := hook.AllEntries()
-	require.Len(t, entries, 1)
-	require.Equal(t, log.WarnLevel, entries[0].Level)
-	require.Contains(t, entries[0].Message, "[owner/repository]")
-	require.Contains(t, entries[0].Message, "tag activity unavailable")
-	require.Contains(t, entries[0].Message, "invalid tag reference")
+	events := recorder.Events(t)
+	require.Len(t, events, 1)
+	require.Equal(t, "WARN", events[0]["level"])
+	require.Contains(t, events[0]["msg"], "[owner/repository]")
+	require.Contains(t, events[0]["msg"], "tag activity unavailable")
+	require.Contains(t, events[0]["msg"], "invalid tag reference")
 }
 
-func captureRepoActivityLogs(t *testing.T) *logtest.Hook {
+func captureRepoActivityLogs(t *testing.T) *loggingtest.Recorder {
 	t.Helper()
 
-	logger := log.StandardLogger()
-	originalLevel := logger.GetLevel()
-	originalOutput := logger.Out
-	originalHooks := logger.ReplaceHooks(make(log.LevelHooks))
-	logger.SetLevel(log.DebugLevel)
-	logger.SetOutput(io.Discard)
-	hook := logtest.NewGlobal()
+	recorder := loggingtest.Capture(t, "debug")
 	t.Cleanup(func() {
-		logger.SetLevel(originalLevel)
-		logger.SetOutput(originalOutput)
-		logger.ReplaceHooks(originalHooks)
 		viper.Reset()
 	})
 
-	return hook
+	return recorder
 }
 
 func runGit(t *testing.T, directory string, args ...string) {

@@ -4,23 +4,36 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/developer-overheid-nl/don-crawler/cmd"
+	applog "github.com/developer-overheid-nl/don-crawler/internal/logging"
+	commonlogging "github.com/developer-overheid-nl/don-register-common/logging"
 	"github.com/joho/godotenv"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
+
+const applicationName = "don-crawler"
 
 func main() {
 	os.Exit(run())
 }
 
+func init() {
+	logger, err := commonlogging.NewJSONLogger(os.Stdout, applicationName, "info")
+	if err != nil {
+		panic(fmt.Sprintf("configure bootstrap logging: %v", err))
+	}
+
+	slog.SetDefault(logger)
+}
+
 func run() int {
 	// Load .env into process environment if present so Viper can pick it up.
 	if err := godotenv.Load(); err != nil {
-		log.Debugf(".env not loaded: %v", err)
+		applog.Event("application", "load_environment").WithError(err).Debug(".env not loaded")
 	}
 
 	// Read configurations.
@@ -39,30 +52,34 @@ func run() int {
 	if err := viper.ReadInConfig(); err != nil {
 		var notFoundError viper.ConfigFileNotFoundError
 		if !errors.As(err, &notFoundError) {
-			log.Errorf("error reading config file: %v", err)
+			applog.Event("application", "read_config").WithError(err).Error("Config file could not be read")
 
 			return 1
 		}
 	}
 
-	logFile, err := configureLogging(os.Stderr)
+	logFile, err := configureLogging(os.Stdout)
 	if err != nil {
-		log.Error(err)
+		applog.Event("application", "configure_logging").WithError(err).Error("Logging could not be configured")
 
 		return 1
 	}
 
 	defer func() {
 		if err := logFile.Close(); err != nil {
-			log.Warnf("unable to close log output: %v", err)
+			applog.Event("application", "close_log_output").WithError(err).Warn("Log output could not be closed")
 		}
 	}()
 
 	if viper.GetBool("ENABLE_FILE_LOG") && strings.TrimSpace(viper.GetString("LOG_FILE")) != "" {
-		log.Infof("Logging to %s", viper.GetString("LOG_FILE"))
+		applog.Event("application", "configure_logging").
+			WithField("log_file", viper.GetString("LOG_FILE")).
+			Info("File logging enabled")
 	}
 
-	log.Debugf("DATADIR=%s", viper.GetString("DATADIR"))
+	applog.Event("application", "configure_data_directory").
+		WithField("data_directory", viper.GetString("DATADIR")).
+		Debug("Data directory configured")
 
 	if err := cmd.Execute(); err != nil {
 		return 1
@@ -72,21 +89,19 @@ func run() int {
 }
 
 func configureLogging(console io.Writer) (io.Closer, error) {
-	levelName := strings.TrimSpace(viper.GetString("LOG_LEVEL"))
-	if levelName == "" {
-		levelName = "info"
-	}
-
-	level, err := log.ParseLevel(levelName)
+	logger, err := commonlogging.NewJSONLogger(
+		console,
+		applicationName,
+		viper.GetString("LOG_LEVEL"),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("invalid LOG_LEVEL %q: %w", levelName, err)
+		return nil, fmt.Errorf("configure shared logger: %w", err)
 	}
-
-	log.SetLevel(level)
-	log.SetOutput(console)
 
 	logPath := strings.TrimSpace(viper.GetString("LOG_FILE"))
 	if logPath == "" || !viper.GetBool("ENABLE_FILE_LOG") {
+		slog.SetDefault(logger)
+
 		return io.NopCloser(strings.NewReader("")), nil
 	}
 
@@ -95,7 +110,18 @@ func configureLogging(console io.Writer) (io.Closer, error) {
 		return nil, fmt.Errorf("unable to open log file %s: %w", logPath, err)
 	}
 
-	log.SetOutput(io.MultiWriter(console, f))
+	logger, err = commonlogging.NewJSONLogger(
+		io.MultiWriter(console, f),
+		applicationName,
+		viper.GetString("LOG_LEVEL"),
+	)
+	if err != nil {
+		_ = f.Close()
+
+		return nil, fmt.Errorf("configure shared file logger: %w", err)
+	}
+
+	slog.SetDefault(logger)
 
 	return f, nil
 }
