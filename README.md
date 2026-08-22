@@ -81,8 +81,7 @@ JSON-regels worden naar `LOG_FILE` geschreven wanneer
 `ENABLE_FILE_LOG=true` is ingesteld.
 
 De JSON-opmaak en level-filtering komen uit de gedeelde
-`don-register-common/logging` package. Totdat die wijziging als versie is
-uitgebracht, pint `go.mod` de package op commit `980ff32` uit PR 15.
+`don-register-common/logging` package.
 
 De waarden van `level` zijn `DEBUG`, `INFO`, `WARN` en `ERROR`, zodat Loki het
 niveau automatisch als `detected_level` kan herkennen. Bijvoorbeeld:

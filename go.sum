@@ -12,8 +12,8 @@ github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6N
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/developer-overheid-nl/don-register-common v0.1.2-0.20260820090028-980ff32ca88b h1:NayRkkoUX+//HorO2NOSqaaU669NE81hhDnqDfZZqec=
-github.com/developer-overheid-nl/don-register-common v0.1.2-0.20260820090028-980ff32ca88b/go.mod h1:AsetBCNq/YCen52xkWxSNcfi9FbYqEwwgOrqJysw4lg=
+github.com/developer-overheid-nl/don-register-common v0.2.0 h1:MHJ4waVfVG+uwNKifIWDQE1rTKtaHIq/G5G0sIg06gc=
+github.com/developer-overheid-nl/don-register-common v0.2.0/go.mod h1:AsetBCNq/YCen52xkWxSNcfi9FbYqEwwgOrqJysw4lg=
 github.com/fatih/color v1.16.0 h1:zmkK9Ngbjj+K0yRhTVONQh1p/HknKYSlNT+vZCzyokM=
 github.com/fatih/color v1.16.0/go.mod h1:fL2Sau1YI5c0pdGEVCbKQbLXB6edEj1ZgiY4NijnWvE=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
