@@ -48,6 +48,7 @@ type Crawler struct {
 	gitHubScanner    scanner.Scanner
 	gitLabScanner    scanner.Scanner
 	bitBucketScanner scanner.Scanner
+	forgejoScanner   scanner.Scanner
 
 	apiClient apiclient.APIClient
 }
@@ -99,6 +100,7 @@ func NewCrawler(dryRun bool) *Crawler {
 	c.gitHubScanner = scanner.NewGitHubScanner()
 	c.gitLabScanner = scanner.NewGitLabScanner()
 	c.bitBucketScanner = scanner.NewBitBucketScanner()
+	c.forgejoScanner = scanner.NewForgejoScanner()
 
 	c.apiClient = apiclient.NewClient()
 
@@ -200,6 +202,12 @@ func (c *Crawler) CrawlPublishers(publishers []common.Publisher) error {
 	return c.crawl()
 }
 
+// isForgejo reports whether u is hosted on a Forgejo or Gitea instance, such as
+// code.overheid.nl. Both expose the same API.
+func isForgejo(u *url.URL) bool {
+	return vcsurl.IsForgeJo(u) || vcsurl.IsGitea(u)
+}
+
 // ScanPublisher scans all the publisher' repositories and sends any repository
 // with a publiccode.yml to the repositories channel.
 func (c *Crawler) ScanPublisher(publisher common.Publisher) {
@@ -219,6 +227,8 @@ func (c *Crawler) ScanPublisher(publisher common.Publisher) {
 		err = c.bitBucketScanner.ScanGroupOfRepos(orgURL, publisher, c.repositories)
 	case vcsurl.IsGitLab(&orgURL):
 		err = c.gitLabScanner.ScanGroupOfRepos(orgURL, publisher, c.repositories)
+	case isForgejo(&orgURL):
+		err = c.forgejoScanner.ScanGroupOfRepos(orgURL, publisher, c.repositories)
 	default:
 		err = fmt.Errorf(
 			"publisher %s: unsupported code hosting platform for %s",
@@ -253,6 +263,8 @@ func (c *Crawler) ScanPublisher(publisher common.Publisher) {
 			err = c.bitBucketScanner.ScanRepo(repoURL, publisher, c.repositories)
 		case vcsurl.IsGitLab(&repoURL):
 			err = c.gitLabScanner.ScanRepo(repoURL, publisher, c.repositories)
+		case isForgejo(&repoURL):
+			err = c.forgejoScanner.ScanRepo(repoURL, publisher, c.repositories)
 		default:
 			err = fmt.Errorf(
 				"publisher %s: unsupported code hosting platform for %s",
@@ -557,6 +569,8 @@ func (c *Crawler) lastActivityFromAPI(repository common.Repository) (time.Time, 
 		apiLastActivity, apiErr = c.bitBucketScanner.LastCommitTimeFromAPI(repository.CanonicalURL)
 	case vcsurl.IsGitLab(&repository.CanonicalURL):
 		apiLastActivity, apiErr = c.gitLabScanner.LastCommitTimeFromAPI(repository.CanonicalURL)
+	case isForgejo(&repository.CanonicalURL):
+		apiLastActivity, apiErr = c.forgejoScanner.LastCommitTimeFromAPI(repository.CanonicalURL)
 	default:
 		apiErr = fmt.Errorf("unsupported repository host %s", repository.CanonicalURL.Host)
 	}

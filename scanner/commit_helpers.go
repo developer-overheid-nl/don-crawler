@@ -70,7 +70,7 @@ func lastCommitTimeWithRetry(provider string, fetch func() (time.Time, error)) (
 		applog.Event("scanner", "wait_for_commit_rate_limit").WithFields(map[string]any{
 			"provider":            strings.ToLower(waitProvider),
 			applog.FieldResetTime: rateLimitErr.Reset,
-			"wait_ms":             wait.Milliseconds(),
+			applog.FieldWaitMS:    wait.Milliseconds(),
 		}).Info("Commit API rate limited; waiting before retry")
 		time.Sleep(wait)
 	}
