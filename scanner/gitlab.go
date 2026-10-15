@@ -97,10 +97,10 @@ func gitlabCallWithRateLimitRetry[T any](
 
 		wait := gitlabRateLimitWait(reset)
 		applog.Event("gitlab_scanner", "wait_for_rate_limit").WithFields(map[string]any{
-			"api_operation": operation,
-			"wait_ms":       wait.Milliseconds(),
-			"attempt":       attempt + 1,
-			"max_attempts":  maxGitLabRateLimitRetries,
+			"api_operation":    operation,
+			applog.FieldWaitMS: wait.Milliseconds(),
+			"attempt":          attempt + 1,
+			"max_attempts":     maxGitLabRateLimitRetries,
 		}).Info("GitLab API rate limited; waiting before retry")
 
 		// Use context-aware sleep

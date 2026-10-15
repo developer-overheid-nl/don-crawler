@@ -11,4 +11,5 @@ const (
 	FieldResetTime    = "reset_time"
 	FieldStatusCode   = "status_code"
 	FieldURL          = "url"
+	FieldWaitMS       = "wait_ms"
 )
