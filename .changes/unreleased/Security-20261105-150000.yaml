@@ -1,0 +1,3 @@
+kind: Security
+body: Build the image in two stages and run on `debian:trixie-slim` with only `git` and CA certificates, upgraded on every build, so the curl and Brotli fixes for CVE-2026-111497 and CVE-2026-92392 are included and the Go toolchain no longer ships in the runtime image.
+time: 2026-11-05T15:00:00+01:00
