@@ -1,3 +1,0 @@
-kind: Added
-body: Crawl repositories on Forgejo and Gitea instances such as code.overheid.nl, so organisations registered with a code.overheid.nl URL are indexed in the OSS register.
-time: 2026-10-14T13:45:00+02:00
