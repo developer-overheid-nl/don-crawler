@@ -6,7 +6,7 @@ require (
 	github.com/google/go-github/v90 v90.0.0
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/joho/godotenv v1.5.1
-	github.com/ktrysmt/go-bitbucket v0.10.0
+	github.com/ktrysmt/go-bitbucket v0.12.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
